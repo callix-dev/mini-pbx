@@ -74,97 +74,143 @@
             <table class="table">
                 <thead>
                     <tr>
-                        <th class="w-12">
+                        <th class="w-10">
                             <input type="checkbox" id="select-all" class="rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500">
                         </th>
-                        <th>Extension</th>
-                        <th>Name</th>
-                        <th>User</th>
-                        <th>Status</th>
+                        <th class="w-24">Extension</th>
+                        <th>Name / User</th>
+                        <th class="w-24 text-center">Status</th>
+                        <th class="w-20 text-center">VM</th>
                         <th>Groups</th>
-                        <th>Active</th>
-                        <th class="text-right">Actions</th>
+                        <th class="w-36">Last Registered</th>
+                        <th class="w-20 text-center">Active</th>
+                        <th class="w-28 text-right">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
                     @forelse($extensions as $extension)
-                        <tr>
+                        <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50">
                             <td>
                                 <input type="checkbox" name="ids[]" value="{{ $extension->id }}" 
                                        class="extension-checkbox rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500">
                             </td>
                             <td>
-                                <span class="font-mono font-medium text-primary-600 dark:text-primary-400">
+                                <a href="{{ route('extensions.show', $extension) }}" class="font-mono font-bold text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 hover:underline">
                                     {{ $extension->extension }}
-                                </span>
+                                </a>
                             </td>
                             <td>
                                 <div class="flex items-center">
-                                    <div class="flex-shrink-0 w-8 h-8 bg-gray-200 dark:bg-gray-700 rounded-full flex items-center justify-center">
-                                        <span class="text-sm font-medium text-gray-600 dark:text-gray-300">
-                                            {{ strtoupper(substr($extension->name, 0, 2)) }}
+                                    <div class="relative flex-shrink-0">
+                                        <div class="w-9 h-9 bg-gradient-to-br from-primary-400 to-accent-500 rounded-lg flex items-center justify-center shadow-sm">
+                                            <span class="text-xs font-bold text-white">
+                                                {{ strtoupper(substr($extension->name, 0, 2)) }}
+                                            </span>
+                                        </div>
+                                        <span class="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-white dark:border-gray-800 
+                                            {{ $extension->status === 'online' ? 'bg-green-500' : ($extension->status === 'on_call' ? 'bg-red-500' : ($extension->status === 'ringing' ? 'bg-yellow-500' : 'bg-gray-400')) }}">
                                         </span>
                                     </div>
-                                    <span class="ml-3 font-medium text-gray-900 dark:text-white">{{ $extension->name }}</span>
+                                    <div class="ml-3 min-w-0">
+                                        <p class="font-medium text-gray-900 dark:text-white truncate">{{ $extension->name }}</p>
+                                        @if($extension->user)
+                                            <a href="{{ route('users.show', $extension->user) }}" 
+                                               class="text-xs text-primary-600 dark:text-primary-400 hover:underline flex items-center">
+                                                <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
+                                                </svg>
+                                                {{ $extension->user->name }}
+                                            </a>
+                                        @else
+                                            <span class="text-xs text-gray-400 dark:text-gray-500">No user assigned</span>
+                                        @endif
+                                    </div>
                                 </div>
                             </td>
-                            <td>
-                                @if($extension->user)
-                                    <span class="text-gray-900 dark:text-gray-100">{{ $extension->user->name }}</span>
-                                @else
-                                    <span class="text-gray-400 dark:text-gray-500">Unassigned</span>
-                                @endif
-                            </td>
-                            <td>
+                            <td class="text-center">
                                 @php
-                                    $statusColors = [
-                                        'online' => 'badge-success',
-                                        'offline' => 'badge-gray',
-                                        'ringing' => 'badge-warning',
-                                        'on_call' => 'badge-danger',
+                                    $statusConfig = [
+                                        'online' => ['class' => 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400', 'icon' => 'M5 13l4 4L19 7'],
+                                        'offline' => ['class' => 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400', 'icon' => 'M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636'],
+                                        'ringing' => ['class' => 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400', 'icon' => 'M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9'],
+                                        'on_call' => ['class' => 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400', 'icon' => 'M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z'],
                                     ];
+                                    $config = $statusConfig[$extension->status] ?? $statusConfig['offline'];
                                 @endphp
-                                <span class="badge {{ $statusColors[$extension->status] ?? 'badge-gray' }}">
+                                <span class="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium {{ $config['class'] }}">
+                                    <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="{{ $config['icon'] }}"/>
+                                    </svg>
                                     {{ ucfirst(str_replace('_', ' ', $extension->status)) }}
                                 </span>
+                            </td>
+                            <td class="text-center">
+                                @if($extension->voicemail_enabled)
+                                    <span class="inline-flex items-center justify-center w-7 h-7 rounded-full bg-green-100 dark:bg-green-900/30" title="Voicemail Enabled">
+                                        <svg class="w-4 h-4 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+                                        </svg>
+                                    </span>
+                                @else
+                                    <span class="inline-flex items-center justify-center w-7 h-7 rounded-full bg-gray-100 dark:bg-gray-700" title="Voicemail Disabled">
+                                        <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/>
+                                        </svg>
+                                    </span>
+                                @endif
                             </td>
                             <td>
                                 @if($extension->groups->count() > 0)
                                     <div class="flex flex-wrap gap-1">
                                         @foreach($extension->groups->take(2) as $group)
-                                            <span class="badge badge-info text-xs">{{ $group->name }}</span>
+                                            <a href="{{ route('extension-groups.show', $group) }}" 
+                                               class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-400 hover:bg-primary-200 dark:hover:bg-primary-900/50">
+                                                {{ $group->name }}
+                                            </a>
                                         @endforeach
                                         @if($extension->groups->count() > 2)
-                                            <span class="badge badge-gray text-xs">+{{ $extension->groups->count() - 2 }}</span>
+                                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400">
+                                                +{{ $extension->groups->count() - 2 }}
+                                            </span>
                                         @endif
                                     </div>
                                 @else
-                                    <span class="text-gray-400 dark:text-gray-500">-</span>
+                                    <span class="text-xs text-gray-400 dark:text-gray-500">—</span>
                                 @endif
                             </td>
                             <td>
+                                @if($extension->last_registered_at)
+                                    <div class="text-xs">
+                                        <p class="text-gray-900 dark:text-white">{{ $extension->last_registered_at->diffForHumans() }}</p>
+                                        <p class="text-gray-500 dark:text-gray-400 font-mono">{{ $extension->last_registered_ip ?? 'N/A' }}</p>
+                                    </div>
+                                @else
+                                    <span class="text-xs text-gray-400 dark:text-gray-500">Never</span>
+                                @endif
+                            </td>
+                            <td class="text-center">
                                 <form action="{{ route('extensions.toggle-status', $extension) }}" method="POST" class="inline">
                                     @csrf
                                     @method('PATCH')
-                                    <button type="submit" class="relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none {{ $extension->is_active ? 'bg-primary-600' : 'bg-gray-300 dark:bg-gray-600' }}">
-                                        <span class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out {{ $extension->is_active ? 'translate-x-5' : 'translate-x-0' }}"></span>
+                                    <button type="submit" class="relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none {{ $extension->is_active ? 'bg-green-500' : 'bg-gray-300 dark:bg-gray-600' }}" title="{{ $extension->is_active ? 'Click to disable' : 'Click to enable' }}">
+                                        <span class="pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out {{ $extension->is_active ? 'translate-x-4' : 'translate-x-0' }}"></span>
                                     </button>
                                 </form>
                             </td>
                             <td class="text-right">
-                                <div class="flex items-center justify-end space-x-2">
+                                <div class="flex items-center justify-end space-x-1">
                                     <a href="{{ route('extensions.show', $extension) }}" 
-                                       class="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
-                                       title="View">
-                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                       class="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded hover:bg-gray-100 dark:hover:bg-gray-700"
+                                       title="View Details">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
                                         </svg>
                                     </a>
                                     <a href="{{ route('extensions.edit', $extension) }}" 
-                                       class="p-2 text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
+                                       class="p-1.5 text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 rounded hover:bg-gray-100 dark:hover:bg-gray-700"
                                        title="Edit">
-                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
                                         </svg>
                                     </a>
@@ -173,9 +219,9 @@
                                         @csrf
                                         @method('DELETE')
                                         <button type="submit" 
-                                                class="p-2 text-gray-400 hover:text-red-600 dark:hover:text-red-400 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
+                                                class="p-1.5 text-gray-400 hover:text-red-600 dark:hover:text-red-400 rounded hover:bg-gray-100 dark:hover:bg-gray-700"
                                                 title="Delete">
-                                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
                                             </svg>
                                         </button>
@@ -185,7 +231,7 @@
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="8" class="text-center py-12">
+                            <td colspan="9" class="text-center py-12">
                                 <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/>
                                 </svg>
