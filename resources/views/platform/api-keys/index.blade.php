@@ -55,11 +55,19 @@
                             </td>
                             <td>
                                 <div class="flex flex-wrap gap-1">
-                                    @if($key->can_read)
-                                        <span class="badge badge-gray">Read</span>
-                                    @endif
-                                    @if($key->can_write)
-                                        <span class="badge badge-primary">Write</span>
+                                    @if($key->permissions && count($key->permissions) > 0)
+                                        @php
+                                            $readCount = collect($key->permissions)->filter(fn($p) => str_starts_with($p, 'read:'))->count();
+                                            $writeCount = collect($key->permissions)->filter(fn($p) => str_starts_with($p, 'write:') || str_starts_with($p, 'delete:'))->count();
+                                        @endphp
+                                        @if($readCount > 0)
+                                            <span class="badge badge-info text-xs">{{ $readCount }} Read</span>
+                                        @endif
+                                        @if($writeCount > 0)
+                                            <span class="badge badge-primary text-xs">{{ $writeCount }} Write</span>
+                                        @endif
+                                    @else
+                                        <span class="badge badge-warning text-xs">Full Access</span>
                                     @endif
                                 </div>
                             </td>
@@ -84,6 +92,14 @@
                             </td>
                             <td class="text-right">
                                 <div class="flex items-center justify-end space-x-2">
+                                    <a href="{{ route('api-keys.show', $key) }}" 
+                                       class="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
+                                       title="View Details">
+                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                                        </svg>
+                                    </a>
                                     <form action="{{ route('api-keys.toggle-status', $key) }}" method="POST" class="inline">
                                         @csrf
                                         @method('PATCH')

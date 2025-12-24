@@ -4,9 +4,9 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Extension extends Model
@@ -43,9 +43,13 @@ class Extension extends Model
         'voicemail_password',
     ];
 
-    public function user(): BelongsTo
+    /**
+     * Get the user assigned to this extension.
+     * User has extension_id, so this is a HasOne relationship.
+     */
+    public function user(): HasOne
     {
-        return $this->belongsTo(User::class);
+        return $this->hasOne(User::class, 'extension_id');
     }
 
     public function groups(): BelongsToMany
