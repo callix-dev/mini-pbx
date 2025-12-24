@@ -23,6 +23,7 @@ use App\Http\Controllers\Platform\ApiKeyController;
 use App\Http\Controllers\Platform\AuditLogController;
 use App\Http\Controllers\Platform\BackupController;
 use App\Http\Controllers\Agent\CallbackController;
+use App\Http\Controllers\SoftphoneController;
 use Illuminate\Support\Facades\Route;
 
 // Public routes
@@ -39,6 +40,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
+
+    // Softphone (popup window)
+    Route::get('/softphone', [SoftphoneController::class, 'index'])->name('softphone');
 
     // Agent Callbacks
     Route::prefix('callbacks')->name('callbacks.')->group(function () {

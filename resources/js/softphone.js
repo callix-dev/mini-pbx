@@ -176,14 +176,20 @@ class Softphone {
     handleRegistered() {
         console.log('Softphone: Registered');
         this.isRegistered = true;
-        this.dispatchEvent('statechange', { state: 'registered' });
+        this.dispatchEvent('statechange', { 
+            state: 'registered',
+            isRegistered: true 
+        });
         this.logEvent('registered');
     }
 
     handleUnregistered() {
         console.log('Softphone: Unregistered');
         this.isRegistered = false;
-        this.dispatchEvent('statechange', { state: 'unregistered' });
+        this.dispatchEvent('statechange', { 
+            state: 'unregistered',
+            isRegistered: false 
+        });
         this.logEvent('unregistered');
     }
 
@@ -207,9 +213,12 @@ class Softphone {
             
             this.dispatchEvent('statechange', {
                 state: 'ringing',
+                callState: 'ringing',
                 number: number,
+                callerNumber: number,
                 name: name,
-                direction: 'inbound',
+                callerName: name,
+                callDirection: 'inbound',
             });
             
             this.playRingtone();
@@ -221,7 +230,10 @@ class Softphone {
         console.log('Softphone: Call answered');
         this.stopRingtone();
         this.startCallTimer();
-        this.dispatchEvent('statechange', { state: 'connected' });
+        this.dispatchEvent('statechange', { 
+            state: 'connected',
+            callState: 'connected'
+        });
         this.logEvent('call_started');
     }
 
@@ -229,13 +241,23 @@ class Softphone {
         console.log('Softphone: Call hangup');
         this.stopRingtone();
         this.stopCallTimer();
-        this.dispatchEvent('statechange', { state: 'idle' });
+        this.dispatchEvent('statechange', { 
+            state: 'idle',
+            callState: 'idle',
+            callerNumber: '',
+            callerName: '',
+            callDuration: '00:00',
+            isMuted: false,
+            isOnHold: false
+        });
         this.logEvent('call_ended');
     }
 
     handleHoldChange(held) {
         console.log('Softphone: Hold changed:', held);
-        this.dispatchEvent('statechange', { isOnHold: held });
+        this.dispatchEvent('statechange', { 
+            isOnHold: held 
+        });
     }
 
     /**
@@ -257,8 +279,10 @@ class Softphone {
             
             this.dispatchEvent('statechange', {
                 state: 'calling',
+                callState: 'calling',
                 number: number,
-                direction: 'outbound',
+                callerNumber: number,
+                callDirection: 'outbound',
             });
             
             await this.simpleUser.call(destination);
@@ -385,7 +409,9 @@ class Softphone {
         this.callTimer = setInterval(() => {
             this.callDuration++;
             const formatted = this.formatDuration(this.callDuration);
-            this.dispatchEvent('statechange', { callDuration: formatted });
+            this.dispatchEvent('statechange', { 
+                callDuration: formatted 
+            });
         }, 1000);
     }
 
@@ -405,6 +431,11 @@ class Softphone {
 
     dispatchEvent(type, detail = {}) {
         window.dispatchEvent(new CustomEvent(`webphone:${type}`, { detail }));
+        
+        // Also broadcast to other windows via phoneSync
+        if (window.phoneSync && type === 'statechange') {
+            window.phoneSync.broadcast(detail);
+        }
     }
 
     showNotification(number, name) {

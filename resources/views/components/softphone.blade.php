@@ -1,389 +1,224 @@
-<!-- WebRTC Softphone Panel -->
+<!-- WebRTC Softphone Status & Button -->
 @if(auth()->user()->extension)
-<div x-data="softphone()" 
-     x-init="init()"
-     data-has-extension="true"
-     @webphone:statechange.window="handleStateChange($event.detail)"
-     class="fixed bottom-4 right-4 z-50">
+<div class="fixed bottom-4 right-4 z-50" x-data="softphoneStatus()" x-init="init()">
     
-    <!-- Softphone Toggle Button -->
-    <button @click="isOpen = !isOpen; isMinimized = false" 
-            class="relative bg-primary-600 hover:bg-primary-700 text-white rounded-full p-4 shadow-lg transition-all duration-200"
+    <!-- Expanded Status Panel (shown during calls) -->
+    <div x-show="isInCall" 
+         x-transition:enter="transition ease-out duration-200"
+         x-transition:enter-start="opacity-0 translate-y-2"
+         x-transition:enter-end="opacity-100 translate-y-0"
+         class="mb-3 bg-white dark:bg-gray-800 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden w-72">
+        
+        <!-- Call Status Header -->
+        <div class="px-4 py-3 flex items-center justify-between"
+             :class="{
+                'bg-yellow-500': callState === 'ringing',
+                'bg-blue-500': callState === 'calling',
+                'bg-green-500': callState === 'connected'
+             }">
+            <div class="flex items-center space-x-3 text-white">
+                <div class="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center">
+                    <svg class="w-5 h-5" :class="{ 'animate-pulse': callState === 'ringing' }" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/>
+                    </svg>
+                </div>
+                <div>
+                    <p class="text-sm font-medium" x-text="getCallStateLabel()"></p>
+                    <p class="text-xs text-white/80" x-text="callDirection === 'inbound' ? 'Incoming' : 'Outgoing'"></p>
+                </div>
+            </div>
+            <button @click="openSoftphone()" class="p-2 hover:bg-white/20 rounded-lg transition-colors" title="Open Phone">
+                <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+                </svg>
+            </button>
+        </div>
+        
+        <!-- Caller Info -->
+        <div class="px-4 py-3 border-b border-gray-200 dark:border-gray-700">
+            <p class="text-lg font-semibold text-gray-900 dark:text-white" x-text="callerName || callerNumber || 'Unknown'"></p>
+            <p class="text-sm text-gray-500 dark:text-gray-400" x-show="callerName" x-text="callerNumber"></p>
+        </div>
+        
+        <!-- Call Duration & Status -->
+        <div class="px-4 py-3 flex items-center justify-between">
+            <div class="flex items-center space-x-4">
+                <!-- Duration -->
+                <div x-show="callState === 'connected'" class="flex items-center space-x-2">
+                    <div class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                    <span class="font-mono text-lg text-gray-900 dark:text-white" x-text="callDuration"></span>
+                </div>
+                
+                <!-- Status Icons -->
+                <div class="flex items-center space-x-2">
+                    <span x-show="isMuted" class="inline-flex items-center px-2 py-1 rounded-full text-xs bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">
+                        <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2"/>
+                        </svg>
+                        Muted
+                    </span>
+                    <span x-show="isOnHold" class="inline-flex items-center px-2 py-1 rounded-full text-xs bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400">
+                        <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
+                        Hold
+                    </span>
+                </div>
+            </div>
+            
+            <!-- Quick Actions -->
+            <div class="flex items-center space-x-1">
+                <button @click="openSoftphone()" 
+                        class="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
+                        title="Open Phone">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/>
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Main Phone Button -->
+    <button @click="openSoftphone()" 
+            class="relative bg-primary-600 hover:bg-primary-700 text-white rounded-full p-4 shadow-lg transition-all duration-200 group"
             :class="{ 
-                'animate-pulse ring-4 ring-green-400': callState === 'ringing',
-                'ring-2 ring-green-500': isRegistered && callState === 'idle'
+                'ring-4 ring-yellow-400 animate-pulse': callState === 'ringing',
+                'ring-2 ring-green-500': isRegistered && !isInCall,
+                'ring-2 ring-blue-500': callState === 'calling',
+                'ring-2 ring-green-400': callState === 'connected'
             }">
         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/>
         </svg>
-        <!-- Registration status indicator -->
-        <span class="absolute -top-1 -right-1 w-3 h-3 rounded-full border-2 border-white"
-              :class="isRegistered ? 'bg-green-500' : 'bg-red-500'"></span>
-    </button>
-
-    <!-- Softphone Panel -->
-    <div x-show="isOpen" 
-         x-transition:enter="transition ease-out duration-200"
-         x-transition:enter-start="opacity-0 scale-95 translate-y-4"
-         x-transition:enter-end="opacity-100 scale-100 translate-y-0"
-         x-transition:leave="transition ease-in duration-150"
-         x-transition:leave-start="opacity-100 scale-100"
-         x-transition:leave-end="opacity-0 scale-95"
-         class="absolute bottom-16 right-0 w-80 bg-white dark:bg-gray-800 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden"
-         style="display: none;">
         
-        <!-- Header -->
-        <div class="bg-gradient-to-r from-primary-600 to-accent-600 text-white px-4 py-3 flex items-center justify-between">
-            <div class="flex items-center space-x-2">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/>
-                </svg>
-                <span class="font-medium">Softphone</span>
-            </div>
-            <div class="flex items-center space-x-2">
-                <button @click="isMinimized = !isMinimized" class="p-1 hover:bg-white/20 rounded">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4"/>
-                    </svg>
-                </button>
-                <button @click="isOpen = false" class="p-1 hover:bg-white/20 rounded">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-                    </svg>
-                </button>
-            </div>
-        </div>
-
-        <!-- Status Bar -->
-        <div class="px-4 py-2 bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between text-sm">
-            <div class="flex items-center space-x-2">
-                <span class="w-2 h-2 rounded-full" :class="isRegistered ? 'bg-green-500' : 'bg-red-500'"></span>
-                <span class="text-gray-600 dark:text-gray-400" x-text="isRegistered ? 'Registered' : 'Disconnected'"></span>
-            </div>
-            <span class="text-gray-500 dark:text-gray-400 font-mono">Ext: {{ auth()->user()->extension->extension }}</span>
-        </div>
-
-        <!-- Main Content -->
-        <div x-show="!isMinimized" class="p-4">
-            <!-- Error State -->
-            <div x-show="errorMessage" class="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
-                <p class="text-sm text-red-600 dark:text-red-400" x-text="errorMessage"></p>
-                <button @click="reconnect()" class="mt-2 text-sm text-red-700 dark:text-red-300 underline">Try Reconnect</button>
-            </div>
-
-            <!-- Idle State - Dial Pad -->
-            <div x-show="callState === 'idle' || callState === 'registered'">
-                <!-- Display -->
-                <div class="relative mb-4">
-                    <input type="text" 
-                           x-model="dialNumber" 
-                           x-ref="dialInput"
-                           @keydown.enter="makeCall()"
-                           placeholder="Enter number..."
-                           class="w-full text-center text-xl font-mono bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg py-3 pr-10 focus:ring-primary-500 focus:border-primary-500">
-                    <button x-show="dialNumber" 
-                            @click="dialNumber = dialNumber.slice(0, -1)" 
-                            class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2M3 12l6.414 6.414a2 2 0 001.414.586H19a2 2 0 002-2V7a2 2 0 00-2-2h-8.172a2 2 0 00-1.414.586L3 12z"/>
-                        </svg>
-                    </button>
-                </div>
-                
-                <!-- Dial Pad -->
-                <div class="grid grid-cols-3 gap-2 mb-4">
-                    <template x-for="key in ['1', '2', '3', '4', '5', '6', '7', '8', '9', '*', '0', '#']" :key="key">
-                        <button @click="addDigit(key)" 
-                                class="py-3 text-lg font-medium bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition-colors active:scale-95"
-                                x-text="key">
-                        </button>
-                    </template>
-                </div>
-
-                <!-- Call Button -->
-                <button @click="makeCall()" 
-                        :disabled="!dialNumber || !isRegistered"
-                        :class="{ 'opacity-50 cursor-not-allowed': !dialNumber || !isRegistered }"
-                        class="w-full bg-green-600 hover:bg-green-700 text-white py-3 rounded-lg font-medium flex items-center justify-center space-x-2 transition-colors">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/>
-                    </svg>
-                    <span>Call</span>
-                </button>
-            </div>
-
-            <!-- Calling State -->
-            <div x-show="callState === 'calling'" class="text-center">
-                <div class="mb-4">
-                    <div class="w-16 h-16 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center mx-auto mb-3">
-                        <svg class="w-8 h-8 text-blue-600 dark:text-blue-400 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/>
-                        </svg>
-                    </div>
-                    <p class="text-sm text-gray-500 dark:text-gray-400">Calling...</p>
-                    <p class="text-xl font-mono text-gray-900 dark:text-white" x-text="callerNumber"></p>
-                </div>
-
-                <!-- Cancel Button -->
-                <button @click="hangUp()" 
-                        class="w-full bg-red-600 hover:bg-red-700 text-white py-3 rounded-lg font-medium flex items-center justify-center space-x-2 transition-colors">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 8l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2M5 3a2 2 0 00-2 2v1c0 8.284 6.716 15 15 15h1a2 2 0 002-2v-3.28a1 1 0 00-.684-.948l-4.493-1.498a1 1 0 00-1.21.502l-1.13 2.257a11.042 11.042 0 01-5.516-5.517l2.257-1.128a1 1 0 00.502-1.21L9.228 3.683A1 1 0 008.279 3H5z"/>
-                    </svg>
-                    <span>Cancel</span>
-                </button>
-            </div>
-
-            <!-- In Call State -->
-            <div x-show="callState === 'connected'" class="text-center">
-                <div class="mb-4">
-                    <div class="w-16 h-16 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center mx-auto mb-3">
-                        <svg class="w-8 h-8 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/>
-                        </svg>
-                    </div>
-                    <p class="text-lg font-medium text-gray-900 dark:text-white" x-text="callerName || callerNumber"></p>
-                    <p class="text-2xl font-mono text-green-600 dark:text-green-400" x-text="callDuration"></p>
-                </div>
-
-                <!-- In-Call Controls -->
-                <div class="grid grid-cols-4 gap-2 mb-4">
-                    <button @click="toggleMute()" 
-                            :class="{ 'bg-red-100 dark:bg-red-900/30 text-red-600': isMuted }"
-                            class="p-3 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex flex-col items-center">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path x-show="!isMuted" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/>
-                            <path x-show="isMuted" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2"/>
-                        </svg>
-                        <span class="text-xs mt-1">Mute</span>
-                    </button>
-                    <button @click="toggleHold()"
-                            :class="{ 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-600': isOnHold }"
-                            class="p-3 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex flex-col items-center">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                        </svg>
-                        <span class="text-xs mt-1">Hold</span>
-                    </button>
-                    <button @click="showTransfer = !showTransfer" 
-                            class="p-3 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex flex-col items-center">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/>
-                        </svg>
-                        <span class="text-xs mt-1">Transfer</span>
-                    </button>
-                    <button @click="showKeypad = !showKeypad" 
-                            class="p-3 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex flex-col items-center">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/>
-                        </svg>
-                        <span class="text-xs mt-1">Keypad</span>
-                    </button>
-                </div>
-
-                <!-- Transfer Input (shown when transfer button clicked) -->
-                <div x-show="showTransfer" x-transition class="mb-4">
-                    <div class="flex space-x-2">
-                        <input type="text" 
-                               x-model="transferNumber" 
-                               placeholder="Transfer to..."
-                               class="flex-1 text-sm bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg py-2 px-3 focus:ring-primary-500 focus:border-primary-500">
-                        <button @click="transfer()" 
-                                :disabled="!transferNumber"
-                                class="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm disabled:opacity-50">
-                            Transfer
-                        </button>
-                    </div>
-                </div>
-
-                <!-- In-call Keypad (shown when keypad button clicked) -->
-                <div x-show="showKeypad" x-transition class="mb-4">
-                    <div class="grid grid-cols-3 gap-1">
-                        <template x-for="key in ['1', '2', '3', '4', '5', '6', '7', '8', '9', '*', '0', '#']" :key="key">
-                            <button @click="sendDTMF(key)" 
-                                    class="py-2 text-sm font-medium bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-colors"
-                                    x-text="key">
-                            </button>
-                        </template>
-                    </div>
-                </div>
-
-                <!-- Hang Up Button -->
-                <button @click="hangUp()" 
-                        class="w-full bg-red-600 hover:bg-red-700 text-white py-3 rounded-lg font-medium flex items-center justify-center space-x-2 transition-colors">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 8l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2M5 3a2 2 0 00-2 2v1c0 8.284 6.716 15 15 15h1a2 2 0 002-2v-3.28a1 1 0 00-.684-.948l-4.493-1.498a1 1 0 00-1.21.502l-1.13 2.257a11.042 11.042 0 01-5.516-5.517l2.257-1.128a1 1 0 00.502-1.21L9.228 3.683A1 1 0 008.279 3H5z"/>
-                    </svg>
-                    <span>End Call</span>
-                </button>
-            </div>
-
-            <!-- Ringing State (Incoming Call) -->
-            <div x-show="callState === 'ringing'" class="text-center">
-                <div class="mb-4">
-                    <div class="w-16 h-16 bg-yellow-100 dark:bg-yellow-900/30 rounded-full flex items-center justify-center mx-auto mb-3 animate-pulse">
-                        <svg class="w-8 h-8 text-yellow-600 dark:text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/>
-                        </svg>
-                    </div>
-                    <p class="text-lg font-medium text-gray-900 dark:text-white">Incoming Call</p>
-                    <p class="text-sm text-gray-500 dark:text-gray-400" x-text="callerName" x-show="callerName"></p>
-                    <p class="text-xl font-mono text-gray-900 dark:text-white" x-text="callerNumber"></p>
-                </div>
-
-                <div class="flex space-x-3">
-                    <button @click="hangUp()" 
-                            class="flex-1 bg-red-600 hover:bg-red-700 text-white py-3 rounded-lg font-medium transition-colors">
-                        <svg class="w-5 h-5 mx-auto mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-                        </svg>
-                        Decline
-                    </button>
-                    <button @click="answerCall()" 
-                            class="flex-1 bg-green-600 hover:bg-green-700 text-white py-3 rounded-lg font-medium transition-colors">
-                        <svg class="w-5 h-5 mx-auto mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
-                        </svg>
-                        Answer
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
+        <!-- Status indicator -->
+        <span class="absolute -top-1 -right-1 w-3 h-3 rounded-full border-2 border-white"
+              :class="{
+                  'bg-green-500': isRegistered && !isInCall,
+                  'bg-yellow-500 animate-pulse': callState === 'ringing',
+                  'bg-blue-500': callState === 'calling',
+                  'bg-green-400': callState === 'connected',
+                  'bg-gray-400': !isRegistered && !isInCall
+              }"></span>
+        
+        <!-- Call duration badge -->
+        <span x-show="callState === 'connected'" 
+              class="absolute -top-2 -left-2 px-1.5 py-0.5 bg-green-500 text-white text-xs font-mono rounded-full"
+              x-text="callDuration"></span>
+        
+        <!-- Tooltip (hidden during calls) -->
+        <span x-show="!isInCall" 
+              class="absolute bottom-full right-0 mb-2 px-3 py-1.5 bg-gray-900 text-white text-sm rounded-lg whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+            <span x-text="isWindowOpen ? 'Phone is open' : (isRegistered ? 'Ready' : 'Offline')"></span>
+            <span class="text-gray-400 text-xs block">Ext: {{ auth()->user()->extension->extension }}</span>
+        </span>
+    </button>
 </div>
 
-@push('scripts')
 <script>
-function softphone() {
+function softphoneStatus() {
     return {
-        isOpen: false,
-        isMinimized: false,
+        phoneWindow: null,
+        isWindowOpen: false,
+        checkInterval: null,
+        
+        // Synced state from popup
         isRegistered: false,
         callState: 'idle',
-        callDuration: '00:00',
         callerNumber: '',
         callerName: '',
-        dialNumber: '',
-        transferNumber: '',
+        callDuration: '00:00',
+        callDirection: '',
         isMuted: false,
         isOnHold: false,
-        showTransfer: false,
-        showKeypad: false,
-        errorMessage: '',
+        
+        get isInCall() {
+            return ['ringing', 'calling', 'connected'].includes(this.callState);
+        },
         
         init() {
-            // WebPhone will auto-initialize via webphone.js
-            console.log('Softphone Alpine component initialized');
-        },
-        
-        handleStateChange(detail) {
-            console.log('Softphone received state change:', detail);
-            
-            if (detail.state) {
-                this.callState = detail.state;
+            // Subscribe to phone sync updates
+            if (window.phoneSync) {
+                window.phoneSync.subscribe((state) => {
+                    this.isRegistered = state.isRegistered;
+                    this.callState = state.callState;
+                    this.callerNumber = state.callerNumber;
+                    this.callerName = state.callerName;
+                    this.callDuration = state.callDuration;
+                    this.callDirection = state.callDirection;
+                    this.isMuted = state.isMuted;
+                    this.isOnHold = state.isOnHold;
+                });
                 
-                if (detail.state === 'registered') {
-                    this.isRegistered = true;
-                    this.errorMessage = '';
-                } else if (detail.state === 'unregistered' || detail.state === 'disconnected') {
-                    this.isRegistered = false;
-                } else if (detail.state === 'error') {
-                    this.errorMessage = detail.message || 'Connection error';
-                } else if (detail.state === 'idle') {
-                    this.resetCallState();
-                }
+                // Request current state
+                window.phoneSync.requestState();
             }
             
-            if (detail.number) {
-                this.callerNumber = detail.number;
-            }
-            if (detail.name) {
-                this.callerName = detail.name;
-            }
-            if (detail.callDuration) {
-                this.callDuration = detail.callDuration;
-            }
-            if (typeof detail.isOnHold !== 'undefined') {
-                this.isOnHold = detail.isOnHold;
+            // Check for existing phone window
+            this.checkExistingWindow();
+        },
+        
+        checkExistingWindow() {
+            // Try to detect if phone window is already open
+            const stored = localStorage.getItem('mini-pbx-phone-state');
+            if (stored) {
+                try {
+                    const data = JSON.parse(stored);
+                    if (Date.now() - data.timestamp < 5000) {
+                        this.isWindowOpen = true;
+                    }
+                } catch (e) {}
             }
         },
         
-        resetCallState() {
-            this.callerNumber = '';
-            this.callerName = '';
-            this.callDuration = '00:00';
-            this.isMuted = false;
-            this.isOnHold = false;
-            this.showTransfer = false;
-            this.showKeypad = false;
-            this.transferNumber = '';
-        },
-        
-        addDigit(digit) {
-            this.dialNumber += digit;
-            // Play DTMF tone feedback (optional)
-        },
-        
-        makeCall() {
-            if (this.dialNumber && window.webPhone) {
-                this.callerNumber = this.dialNumber;
-                window.webPhone.call(this.dialNumber);
-                this.dialNumber = '';
+        getCallStateLabel() {
+            switch (this.callState) {
+                case 'ringing': return 'Incoming Call';
+                case 'calling': return 'Calling...';
+                case 'connected': return 'On Call';
+                default: return 'Idle';
             }
         },
         
-        answerCall() {
-            if (window.webPhone) {
-                window.webPhone.answer();
+        openSoftphone() {
+            // If window exists and is open, focus it
+            if (this.phoneWindow && !this.phoneWindow.closed) {
+                this.phoneWindow.focus();
+                return;
             }
-        },
-        
-        hangUp() {
-            if (window.webPhone) {
-                window.webPhone.hangup();
-            }
-        },
-        
-        toggleMute() {
-            if (window.webPhone) {
-                this.isMuted = !this.isMuted;
-                window.webPhone.mute(this.isMuted);
-            }
-        },
-        
-        toggleHold() {
-            if (window.webPhone) {
-                this.isOnHold = !this.isOnHold;
-                window.webPhone.hold(this.isOnHold);
-            }
-        },
-        
-        transfer() {
-            if (this.transferNumber && window.webPhone) {
-                window.webPhone.transfer(this.transferNumber);
-                this.showTransfer = false;
-                this.transferNumber = '';
-            }
-        },
-        
-        sendDTMF(digit) {
-            if (window.webPhone) {
-                window.webPhone.sendDTMF(digit);
-            }
-        },
-        
-        reconnect() {
-            this.errorMessage = '';
-            if (window.webPhone) {
-                window.webPhone.connect();
+            
+            // Calculate position
+            const width = 360;
+            const height = 640;
+            const left = window.screen.width - width - 50;
+            const top = (window.screen.height - height) / 2;
+            
+            // Open popup
+            this.phoneWindow = window.open(
+                '{{ route("softphone") }}',
+                'mini-pbx-softphone',
+                `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=no,status=no,menubar=no,toolbar=no,location=no`
+            );
+            
+            if (this.phoneWindow) {
+                this.isWindowOpen = true;
+                
+                // Check periodically if window is still open
+                this.checkInterval = setInterval(() => {
+                    if (this.phoneWindow.closed) {
+                        this.isWindowOpen = false;
+                        clearInterval(this.checkInterval);
+                        this.phoneWindow = null;
+                    }
+                }, 1000);
             }
         }
     }
 }
 </script>
-@endpush
 @else
-<!-- No extension assigned message -->
+<!-- No extension assigned -->
 <div class="fixed bottom-4 right-4 z-50">
     <div x-data="{ showTooltip: false }" class="relative">
         <button @mouseenter="showTooltip = true" 

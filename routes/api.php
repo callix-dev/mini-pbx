@@ -15,7 +15,7 @@ use Illuminate\Support\Facades\Route;
 |
 */
 
-Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
+Route::middleware('auth:web')->get('/user', function (Request $request) {
     return $request->user();
 });
 
@@ -23,9 +23,12 @@ Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
 |--------------------------------------------------------------------------
 | WebPhone API Routes
 |--------------------------------------------------------------------------
+|
+| Using 'web' middleware for session-based auth (shares session with main app)
+|
 */
 
-Route::middleware(['auth:sanctum'])->prefix('webphone')->group(function () {
+Route::middleware(['web', 'auth'])->prefix('webphone')->group(function () {
     // Get credentials for SIP registration
     Route::get('/credentials', [WebPhoneController::class, 'credentials']);
     
