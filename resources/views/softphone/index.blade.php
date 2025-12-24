@@ -314,6 +314,7 @@
             showKeypad: false,
             errorMessage: '',
             micPermission: 'prompt', // 'prompt', 'granted', 'denied'
+            connectingAnnouncementInterval: null,
             
             get isInCall() {
                 return ['ringing', 'calling', 'connected'].includes(this.callState);
@@ -394,14 +395,36 @@
             },
             
             announceRegistering() {
+                // Clear any existing interval
+                this.stopConnectingAnnouncement();
+                
+                // Announce immediately
                 this.speak('Trying to register phone');
+                
+                // Repeat every 5 seconds until connected
+                this.connectingAnnouncementInterval = setInterval(() => {
+                    if (this.callState === 'connecting' && !this.isRegistered) {
+                        this.speak('Trying to register phone');
+                    } else {
+                        this.stopConnectingAnnouncement();
+                    }
+                }, 5000);
+            },
+            
+            stopConnectingAnnouncement() {
+                if (this.connectingAnnouncementInterval) {
+                    clearInterval(this.connectingAnnouncementInterval);
+                    this.connectingAnnouncementInterval = null;
+                }
             },
             
             announceRegistered() {
+                this.stopConnectingAnnouncement();
                 this.speak('Your phone is connected successfully');
             },
             
             announceRegistrationFailed() {
+                this.stopConnectingAnnouncement();
                 this.speak('Phone registration failed');
             },
             
