@@ -451,3 +451,81 @@ docs/asterisk-config/
 └── manager.conf
 ```
 
+---
+
+## Laravel Forge Daemon Setup
+
+### AMI Listener Daemon
+
+Add a daemon in Laravel Forge to listen for AMI events:
+
+| Field | Value |
+|-------|-------|
+| **Command** | `/usr/bin/php /home/forge/your-site.com/artisan ami:listen` |
+| **User** | `forge` |
+| **Directory** | `/home/forge/your-site.com` |
+| **Processes** | `1` |
+
+### Reverb WebSocket Server Daemon
+
+Add a daemon for Laravel Reverb (real-time broadcasting):
+
+| Field | Value |
+|-------|-------|
+| **Command** | `/usr/bin/php /home/forge/your-site.com/artisan reverb:start` |
+| **User** | `forge` |
+| **Directory** | `/home/forge/your-site.com` |
+| **Processes** | `1` |
+
+### Queue Worker Daemon (Optional - for Horizon)
+
+If using Laravel Horizon:
+
+| Field | Value |
+|-------|-------|
+| **Command** | `/usr/bin/php /home/forge/your-site.com/artisan horizon` |
+| **User** | `forge` |
+| **Directory** | `/home/forge/your-site.com` |
+| **Processes** | `1` |
+
+> **Note:** Replace `your-site.com` with your actual site folder name.
+
+### Environment Variables for Reverb
+
+Add these to your `.env` on the production server:
+
+```env
+BROADCAST_CONNECTION=reverb
+
+REVERB_APP_ID=your-app-id
+REVERB_APP_KEY=your-app-key
+REVERB_APP_SECRET=your-app-secret
+REVERB_HOST=your-domain.com
+REVERB_PORT=8080
+REVERB_SCHEME=https
+
+VITE_REVERB_APP_KEY="${REVERB_APP_KEY}"
+VITE_REVERB_HOST="${REVERB_HOST}"
+VITE_REVERB_PORT="${REVERB_PORT}"
+VITE_REVERB_SCHEME="${REVERB_SCHEME}"
+```
+
+### Nginx Configuration for Reverb WebSocket
+
+Add this to your Nginx site configuration:
+
+```nginx
+location /app {
+    proxy_http_version 1.1;
+    proxy_set_header Host $http_host;
+    proxy_set_header Scheme $scheme;
+    proxy_set_header SERVER_PORT $server_port;
+    proxy_set_header REMOTE_ADDR $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "Upgrade";
+    
+    proxy_pass http://127.0.0.1:8080;
+}
+```
+

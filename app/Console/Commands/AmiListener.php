@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use App\Events\AgentStatusChanged;
 use App\Events\CallEnded;
 use App\Events\CallStarted;
+use App\Events\ExtensionStatusChanged;
 use App\Events\QueueUpdated;
 use App\Models\CallLog;
 use App\Models\Extension;
@@ -334,6 +335,7 @@ class AmiListener extends Command
 
             $extensionModel = Extension::where('extension', $extension)->first();
             if ($extensionModel) {
+                $previousStatus = $extensionModel->status;
                 $status = match ($state) {
                     'NOT_INUSE' => 'online',
                     'INUSE', 'BUSY' => 'on_call',
@@ -341,10 +343,20 @@ class AmiListener extends Command
                     default => 'offline',
                 };
 
-                $extensionModel->update(['status' => $status]);
-                
-                if ($this->option('debug')) {
-                    $this->info("Extension {$extension} status changed to {$status}");
+                if ($previousStatus !== $status) {
+                    $extensionModel->update(['status' => $status]);
+                    
+                    // Broadcast extension status change
+                    broadcast(new ExtensionStatusChanged($extensionModel, $previousStatus, $status));
+                    
+                    // Also broadcast agent status if user is assigned
+                    if ($extensionModel->user) {
+                        broadcast(new AgentStatusChanged($extensionModel->user, $previousStatus, $status));
+                    }
+                    
+                    if ($this->option('debug')) {
+                        $this->info("Extension {$extension} status changed from {$previousStatus} to {$status}");
+                    }
                 }
             }
         }
@@ -392,6 +404,7 @@ class AmiListener extends Command
             $ipAddress = $matches[1];
         }
 
+        $previousStatus = $extensionModel->status;
         $updateData = ['status' => $status];
         
         // Only update registration info if becoming reachable
@@ -402,28 +415,34 @@ class AmiListener extends Command
             }
         }
 
-        $extensionModel->update($updateData);
+        // Only broadcast if status actually changed
+        if ($previousStatus !== $status) {
+            $extensionModel->update($updateData);
 
-        // Broadcast status change
-        if ($extensionModel->user) {
-            broadcast(new AgentStatusChanged(
-                $extensionModel->user,
-                $extensionModel->getOriginal('status') ?? 'offline',
-                $status
-            ));
+            // Broadcast extension status change
+            broadcast(new ExtensionStatusChanged($extensionModel, $previousStatus, $status));
+
+            // Broadcast agent status change if user is assigned
+            if ($extensionModel->user) {
+                broadcast(new AgentStatusChanged($extensionModel->user, $previousStatus, $status));
+            }
+
+            if ($this->option('debug')) {
+                $this->info("ContactStatus: Extension {$extension} changed from {$previousStatus} to {$status} from {$ipAddress}");
+            }
+
+            Log::info("PJSIP ContactStatus", [
+                'extension' => $extension,
+                'contact_status' => $contactStatus,
+                'previous_status' => $previousStatus,
+                'status' => $status,
+                'ip' => $ipAddress,
+                'user_agent' => $userAgent,
+            ]);
+        } else {
+            // Still update registration info even if status didn't change
+            $extensionModel->update($updateData);
         }
-
-        if ($this->option('debug')) {
-            $this->info("ContactStatus: Extension {$extension} is now {$contactStatus} ({$status}) from {$ipAddress}");
-        }
-
-        Log::info("PJSIP ContactStatus", [
-            'extension' => $extension,
-            'contact_status' => $contactStatus,
-            'status' => $status,
-            'ip' => $ipAddress,
-            'user_agent' => $userAgent,
-        ]);
     }
 
     /**
@@ -467,6 +486,7 @@ class AmiListener extends Command
             $ipAddress = $matches[1];
         }
 
+        $previousStatus = $extensionModel->status;
         $updateData = ['status' => $status];
         
         // Only update registration info on successful registration
@@ -477,28 +497,34 @@ class AmiListener extends Command
             }
         }
 
-        $extensionModel->update($updateData);
+        // Only broadcast if status actually changed
+        if ($previousStatus !== $status) {
+            $extensionModel->update($updateData);
 
-        // Broadcast status change
-        if ($extensionModel->user) {
-            broadcast(new AgentStatusChanged(
-                $extensionModel->user,
-                $extensionModel->getOriginal('status') ?? 'offline',
-                $status
-            ));
+            // Broadcast extension status change
+            broadcast(new ExtensionStatusChanged($extensionModel, $previousStatus, $status));
+
+            // Broadcast agent status change if user is assigned
+            if ($extensionModel->user) {
+                broadcast(new AgentStatusChanged($extensionModel->user, $previousStatus, $status));
+            }
+
+            if ($this->option('debug')) {
+                $this->info("PeerStatus: {$peer} changed from {$previousStatus} to {$status}" . ($cause ? " - {$cause}" : ''));
+            }
+
+            Log::info("PJSIP PeerStatus", [
+                'extension' => $extension,
+                'peer_status' => $peerStatus,
+                'previous_status' => $previousStatus,
+                'status' => $status,
+                'ip' => $ipAddress,
+                'cause' => $cause,
+            ]);
+        } else {
+            // Still update registration info even if status didn't change
+            $extensionModel->update($updateData);
         }
-
-        if ($this->option('debug')) {
-            $this->info("PeerStatus: {$peer} is now {$peerStatus} ({$status})" . ($cause ? " - {$cause}" : ''));
-        }
-
-        Log::info("PJSIP PeerStatus", [
-            'extension' => $extension,
-            'peer_status' => $peerStatus,
-            'status' => $status,
-            'ip' => $ipAddress,
-            'cause' => $cause,
-        ]);
     }
 
     /**
@@ -528,10 +554,12 @@ class AmiListener extends Command
 
         $extensionModel = Extension::where('extension', $extension)->first();
         if ($extensionModel) {
+            $previousStatus = $extensionModel->status;
             $isReachable = $status === 'Reachable';
+            $newStatus = $isReachable ? 'online' : 'offline';
             
             $updateData = [
-                'status' => $isReachable ? 'online' : 'offline',
+                'status' => $newStatus,
             ];
             
             if ($isReachable) {
@@ -541,11 +569,22 @@ class AmiListener extends Command
                 }
             }
 
-            $extensionModel->update($updateData);
+            if ($previousStatus !== $newStatus) {
+                $extensionModel->update($updateData);
+                
+                // Broadcast status change
+                broadcast(new ExtensionStatusChanged($extensionModel, $previousStatus, $newStatus));
+                
+                if ($extensionModel->user) {
+                    broadcast(new AgentStatusChanged($extensionModel->user, $previousStatus, $newStatus));
+                }
 
-            if ($this->option('debug')) {
-                $latencyMs = $roundtripUsec ? round($roundtripUsec / 1000, 2) : 'N/A';
-                $this->info("ContactStatusDetail: {$extension} - {$status} (latency: {$latencyMs}ms)");
+                if ($this->option('debug')) {
+                    $latencyMs = $roundtripUsec ? round($roundtripUsec / 1000, 2) : 'N/A';
+                    $this->info("ContactStatusDetail: {$extension} changed from {$previousStatus} to {$newStatus} (latency: {$latencyMs}ms)");
+                }
+            } else {
+                $extensionModel->update($updateData);
             }
         }
     }
@@ -570,4 +609,3 @@ class AmiListener extends Command
         }
     }
 }
-

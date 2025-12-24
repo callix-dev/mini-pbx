@@ -23,9 +23,27 @@ class DashboardController extends Controller
             'todays_answered' => CallLog::today()->answered()->count(),
         ];
 
+        // Get all extensions with their status
+        $extensions = Extension::with('user')
+            ->active()
+            ->orderByRaw("CASE status 
+                WHEN 'on_call' THEN 1 
+                WHEN 'ringing' THEN 2 
+                WHEN 'online' THEN 3 
+                ELSE 4 
+            END")
+            ->get();
+
         // Get recent/active calls
         $activeCalls = CallLog::with(['extension', 'queue'])
             ->whereNull('end_time')
+            ->orderBy('start_time', 'desc')
+            ->limit(10)
+            ->get();
+
+        // Get recent completed calls
+        $recentCalls = CallLog::with(['extension'])
+            ->whereNotNull('end_time')
             ->orderBy('start_time', 'desc')
             ->limit(10)
             ->get();
@@ -41,13 +59,21 @@ class DashboardController extends Controller
         $queues = Queue::with(['members' => function ($query) {
             $query->where('is_logged_in', true);
         }])
-            ->active()
+            ->where('is_active', true)
             ->get();
 
         // Get parked calls (will be populated from AMI)
         $parkedCalls = collect();
 
-        return view('dashboard', compact('stats', 'activeCalls', 'onlineAgents', 'queues', 'parkedCalls'));
+        return view('dashboard', compact(
+            'stats', 
+            'extensions',
+            'activeCalls', 
+            'recentCalls',
+            'onlineAgents', 
+            'queues', 
+            'parkedCalls'
+        ));
     }
 }
 
