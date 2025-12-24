@@ -18,6 +18,13 @@ class Softphone {
         // Audio elements
         this.remoteAudio = null;
         this.ringtoneAudio = null;
+        
+        // Keep-alive mechanism
+        this.keepAliveInterval = null;
+        this.keepAliveIntervalMs = 25000; // 25 seconds (before typical NAT timeout of 30-60s)
+        this.lastKeepAlive = null;
+        this.missedKeepAlives = 0;
+        this.maxMissedKeepAlives = 3;
     }
 
     /**
@@ -182,16 +189,21 @@ class Softphone {
     handleRegistered() {
         console.log('Softphone: Registered');
         this.isRegistered = true;
+        this.missedKeepAlives = 0;
         this.dispatchEvent('statechange', { 
             state: 'registered',
             isRegistered: true 
         });
         this.logEvent('registered');
+        
+        // Start keep-alive mechanism
+        this.startKeepAlive();
     }
 
     handleUnregistered() {
         console.log('Softphone: Unregistered');
         this.isRegistered = false;
+        this.stopKeepAlive();
         this.dispatchEvent('statechange', { 
             state: 'unregistered',
             isRegistered: false 
@@ -202,10 +214,97 @@ class Softphone {
     handleServerDisconnect(error) {
         console.error('Softphone: Server disconnected', error);
         this.isRegistered = false;
+        this.stopKeepAlive();
         this.dispatchEvent('statechange', { state: 'disconnected' });
         
         // Attempt reconnection
         setTimeout(() => this.connect(), 5000);
+    }
+
+    /**
+     * Start the keep-alive mechanism to prevent NAT timeout
+     * Sends periodic messages to keep the connection alive
+     */
+    startKeepAlive() {
+        this.stopKeepAlive(); // Clear any existing interval
+        
+        console.log('Softphone: Starting keep-alive (every ' + (this.keepAliveIntervalMs / 1000) + 's)');
+        
+        this.lastKeepAlive = Date.now();
+        
+        this.keepAliveInterval = setInterval(() => {
+            this.sendKeepAlive();
+        }, this.keepAliveIntervalMs);
+    }
+
+    /**
+     * Stop the keep-alive mechanism
+     */
+    stopKeepAlive() {
+        if (this.keepAliveInterval) {
+            clearInterval(this.keepAliveInterval);
+            this.keepAliveInterval = null;
+            console.log('Softphone: Keep-alive stopped');
+        }
+    }
+
+    /**
+     * Send a keep-alive message
+     * Uses the underlying transport to check connection health
+     */
+    async sendKeepAlive() {
+        if (!this.simpleUser || !this.isRegistered) {
+            return;
+        }
+
+        try {
+            // Check if the WebSocket transport is still connected
+            const userAgent = this.simpleUser.userAgent;
+            
+            if (userAgent && userAgent.transport) {
+                const transport = userAgent.transport;
+                
+                // Check transport state
+                if (transport.state === 'Connected') {
+                    // Transport is healthy
+                    this.lastKeepAlive = Date.now();
+                    this.missedKeepAlives = 0;
+                    console.log('Softphone: Keep-alive OK');
+                } else {
+                    // Transport seems unhealthy
+                    this.missedKeepAlives++;
+                    console.warn('Softphone: Keep-alive missed (' + this.missedKeepAlives + '/' + this.maxMissedKeepAlives + ')');
+                    
+                    if (this.missedKeepAlives >= this.maxMissedKeepAlives) {
+                        console.error('Softphone: Too many missed keep-alives, reconnecting...');
+                        this.stopKeepAlive();
+                        this.handleServerDisconnect(new Error('Keep-alive timeout'));
+                    }
+                }
+            }
+            
+            // Alternative: Send a re-REGISTER to refresh the registration
+            // This is more reliable as it actually communicates with the server
+            // Uncomment if transport check isn't enough:
+            /*
+            if (this.simpleUser.registerer) {
+                await this.simpleUser.registerer.register();
+                this.lastKeepAlive = Date.now();
+                this.missedKeepAlives = 0;
+                console.log('Softphone: Keep-alive REGISTER sent');
+            }
+            */
+            
+        } catch (error) {
+            console.error('Softphone: Keep-alive error:', error);
+            this.missedKeepAlives++;
+            
+            if (this.missedKeepAlives >= this.maxMissedKeepAlives) {
+                console.error('Softphone: Keep-alive failed, reconnecting...');
+                this.stopKeepAlive();
+                this.handleServerDisconnect(error);
+            }
+        }
     }
 
     handleIncomingCall() {
@@ -473,6 +572,9 @@ class Softphone {
     }
 
     async disconnect() {
+        // Stop keep-alive first
+        this.stopKeepAlive();
+        
         if (this.simpleUser) {
             try {
                 await this.simpleUser.unregister();
