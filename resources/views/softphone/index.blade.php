@@ -343,6 +343,9 @@
                 // Start heartbeat to let main window know we're open
                 this.startHeartbeat();
                 
+                // Listen for logout from main window
+                this.listenForLogout();
+                
                 // Check and request permissions
                 await this.checkMicPermission();
                 
@@ -365,6 +368,42 @@
                 setInterval(() => {
                     localStorage.setItem('mini-pbx-phone-heartbeat', Date.now().toString());
                 }, 1000);
+            },
+            
+            listenForLogout() {
+                // Listen for logout event from main window
+                if (window.phoneSync) {
+                    window.phoneSync.onLogout(() => {
+                        this.handleLogout();
+                    });
+                }
+                
+                // Also listen via localStorage directly as backup
+                window.addEventListener('storage', (event) => {
+                    if (event.key === 'mini-pbx-phone-logout') {
+                        this.handleLogout();
+                    }
+                });
+            },
+            
+            handleLogout() {
+                console.log('Softphone: Logout detected, closing...');
+                
+                // Announce logout
+                this.speak('Logging out');
+                
+                // Deregister the phone
+                if (window.webPhone) {
+                    window.webPhone.disconnect();
+                }
+                
+                // Clear heartbeat
+                localStorage.removeItem('mini-pbx-phone-heartbeat');
+                
+                // Close the window after a short delay (let deregistration complete)
+                setTimeout(() => {
+                    window.close();
+                }, 1500);
             },
             
             // Text-to-Speech for status announcements

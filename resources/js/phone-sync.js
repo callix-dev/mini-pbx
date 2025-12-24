@@ -138,6 +138,51 @@ class PhoneSync {
     }
 
     /**
+     * Broadcast logout event to close phone popup
+     */
+    broadcastLogout() {
+        const message = {
+            type: 'logout',
+            timestamp: Date.now(),
+        };
+
+        if (this.channel) {
+            this.channel.postMessage(message);
+        }
+        
+        // Also use localStorage for backup
+        localStorage.setItem('mini-pbx-phone-logout', Date.now().toString());
+        
+        // Clear heartbeat
+        localStorage.removeItem('mini-pbx-phone-heartbeat');
+        localStorage.removeItem('mini-pbx-phone-state');
+    }
+
+    /**
+     * Subscribe to logout events (called from popup)
+     */
+    onLogout(callback) {
+        // Listen via BroadcastChannel
+        if (this.channel) {
+            const originalHandler = this.channel.onmessage;
+            this.channel.onmessage = (event) => {
+                if (event.data.type === 'logout') {
+                    callback();
+                } else if (originalHandler) {
+                    originalHandler(event);
+                }
+            };
+        }
+        
+        // Also listen via localStorage
+        window.addEventListener('storage', (event) => {
+            if (event.key === 'mini-pbx-phone-logout') {
+                callback();
+            }
+        });
+    }
+
+    /**
      * Destroy the channel
      */
     destroy() {
@@ -146,6 +191,29 @@ class PhoneSync {
         }
     }
 }
+
+// Hook into logout forms/buttons
+document.addEventListener('DOMContentLoaded', () => {
+    // Find logout forms and buttons
+    const logoutForms = document.querySelectorAll('form[action*="logout"]');
+    const logoutButtons = document.querySelectorAll('button[onclick*="logout"], a[href*="logout"]');
+    
+    logoutForms.forEach(form => {
+        form.addEventListener('submit', () => {
+            if (window.phoneSync) {
+                window.phoneSync.broadcastLogout();
+            }
+        });
+    });
+    
+    logoutButtons.forEach(button => {
+        button.addEventListener('click', () => {
+            if (window.phoneSync) {
+                window.phoneSync.broadcastLogout();
+            }
+        });
+    });
+});
 
 // Create global instance
 window.phoneSync = new PhoneSync();

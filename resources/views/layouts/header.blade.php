@@ -139,7 +139,8 @@
                         My Callbacks
                     </a>
                     <div class="border-t border-gray-200 dark:border-gray-700 mt-1 pt-1">
-                        <form method="POST" action="{{ route('logout') }}">
+                        <form method="POST" action="{{ route('logout') }}" id="logout-form" 
+                              onsubmit="if(window.phoneSync){window.phoneSync.broadcastLogout()}">
                             @csrf
                             <button type="submit" class="w-full text-left px-4 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-gray-100 dark:hover:bg-gray-700">
                                 <svg class="inline w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
