@@ -1,0 +1,453 @@
+# Mini-PBX Asterisk PJSIP Realtime Integration Guide
+
+## Overview
+
+This document describes the PJSIP Realtime integration between the Mini-PBX Laravel application and Asterisk. The Laravel application writes extension configuration directly to PostgreSQL tables that Asterisk reads via the Realtime engine. This eliminates the need for config file management and provides immediate synchronization.
+
+---
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     Laravel Application                         │
+│  ┌──────────────┐    ┌───────────────────┐    ┌──────────────┐ │
+│  │  Extension   │───▶│ ExtensionObserver │───▶│ PjsipRealtime│ │
+│  │    Model     │    │   (auto-trigger)  │    │   Service    │ │
+│  └──────────────┘    └───────────────────┘    └──────────────┘ │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼ Writes to PostgreSQL
+┌─────────────────────────────────────────────────────────────────┐
+│                       PostgreSQL                                 │
+│   ps_endpoints  │  ps_auths  │  ps_aors  │  ps_contacts         │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼ Asterisk reads via ODBC
+┌─────────────────────────────────────────────────────────────────┐
+│                        Asterisk                                  │
+│   res_odbc  ───▶  sorcery  ───▶  res_pjsip                      │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Database Schema
+
+The following tables are created in PostgreSQL and populated by Laravel:
+
+| Table | Purpose | Written By |
+|-------|---------|------------|
+| `ps_endpoints` | PJSIP endpoint configuration (context, codecs, caller ID, etc.) | Laravel |
+| `ps_auths` | Authentication credentials (username/password) | Laravel |
+| `ps_aors` | Address of Record settings (max contacts, expiration, qualify) | Laravel |
+| `ps_contacts` | Registration storage | **Asterisk** |
+| `ps_transports` | SIP transports (optional - can be in config file) | Laravel |
+| `ps_registrations` | Outbound trunk registrations | Laravel |
+| `ps_domain_aliases` | Domain alias mappings | Laravel |
+| `ps_endpoint_id_ips` | IP-based endpoint identification | Laravel |
+
+---
+
+## Asterisk Configuration
+
+### Prerequisites
+
+Install PostgreSQL ODBC driver:
+
+```bash
+sudo apt-get install unixodbc odbc-postgresql
+```
+
+### Step 1: Configure ODBC Connection
+
+**File: `/etc/odbc.ini`**
+
+```ini
+[asterisk]
+Description = PostgreSQL connection for Asterisk
+Driver = PostgreSQL
+Database = mini_pbx
+Servername = 127.0.0.1
+Port = 5432
+UserName = postgres
+Password = minipbx2025
+Protocol = 9.6
+ReadOnly = No
+ShowSystemTables = No
+```
+
+**File: `/etc/odbcinst.ini`** (if not already configured)
+
+```ini
+[PostgreSQL]
+Description = ODBC for PostgreSQL
+Driver = /usr/lib/x86_64-linux-gnu/odbc/psqlodbcw.so
+Setup = /usr/lib/x86_64-linux-gnu/odbc/libodbcpsqlS.so
+FileUsage = 1
+```
+
+### Step 2: Configure Asterisk ODBC Resource
+
+**File: `/etc/asterisk/res_odbc.conf`**
+
+```ini
+[asterisk]
+enabled => yes
+dsn => asterisk
+username => postgres
+password => minipbx2025
+pre-connect => yes
+max_connections => 5
+pooling => yes
+isolation => read_committed
+idlecheck => 60
+connect_timeout => 10
+```
+
+### Step 3: Configure Realtime Mapping
+
+**File: `/etc/asterisk/extconfig.conf`**
+
+```ini
+[settings]
+; PJSIP Realtime mappings
+ps_endpoints => odbc,asterisk,ps_endpoints
+ps_auths => odbc,asterisk,ps_auths
+ps_aors => odbc,asterisk,ps_aors
+ps_contacts => odbc,asterisk,ps_contacts
+ps_domain_aliases => odbc,asterisk,ps_domain_aliases
+ps_endpoint_id_ips => odbc,asterisk,ps_endpoint_id_ips
+ps_transports => odbc,asterisk,ps_transports
+ps_registrations => odbc,asterisk,ps_registrations
+```
+
+### Step 4: Configure Sorcery for PJSIP
+
+**File: `/etc/asterisk/sorcery.conf`**
+
+```ini
+[res_pjsip]
+; Priority order: realtime first, then config file
+endpoint=realtime,ps_endpoints
+auth=realtime,ps_auths
+aor=realtime,ps_aors
+contact=realtime,ps_contacts
+domain_alias=realtime,ps_domain_aliases
+identify=realtime,ps_endpoint_id_ips
+
+; Keep transport in config file (usually static)
+transport=config,pjsip.conf,criteria=type=transport
+
+; Outbound registrations can be realtime too
+registration=realtime,ps_registrations
+
+[res_pjsip_endpoint_identifier_ip]
+identify=realtime,ps_endpoint_id_ips
+```
+
+### Step 5: Configure PJSIP Transports
+
+**File: `/etc/asterisk/pjsip.conf`**
+
+> **Note:** Only transports are defined here. Endpoints, auths, and aors come from the database.
+
+```ini
+[global]
+type=global
+max_forwards=70
+user_agent=MiniPBX-Asterisk
+default_outbound_endpoint=default
+
+[system]
+type=system
+timer_t1=500
+timer_b=32000
+
+; UDP Transport (Standard SIP)
+[transport-udp]
+type=transport
+protocol=udp
+bind=0.0.0.0:5060
+; Uncomment and set your external IP if behind NAT
+; external_media_address=YOUR.PUBLIC.IP.HERE
+; external_signaling_address=YOUR.PUBLIC.IP.HERE
+local_net=192.168.0.0/16
+local_net=10.0.0.0/8
+local_net=172.16.0.0/12
+
+; TCP Transport
+[transport-tcp]
+type=transport
+protocol=tcp
+bind=0.0.0.0:5060
+
+; WebSocket Transport (WebRTC)
+[transport-wss]
+type=transport
+protocol=wss
+bind=0.0.0.0:8089
+; cert_file=/etc/asterisk/keys/asterisk.pem
+; priv_key_file=/etc/asterisk/keys/asterisk.key
+
+; Anonymous endpoint for unmatched inbound
+[anonymous]
+type=endpoint
+context=from-external
+disallow=all
+allow=ulaw,alaw
+transport=transport-udp
+```
+
+### Step 6: Configure AMI
+
+**File: `/etc/asterisk/manager.conf`**
+
+```ini
+[general]
+enabled = yes
+port = 5038
+bindaddr = 127.0.0.1
+
+[mini-pbx]
+secret = YOUR_SECURE_AMI_PASSWORD
+deny = 0.0.0.0/0.0.0.0
+permit = 127.0.0.1/255.255.255.255
+read = system,call,log,verbose,agent,user,config,dtmf,reporting,cdr,dialplan
+write = system,call,agent,user,config,command,reporting,originate
+eventfilter = !Event: RTCPSent
+eventfilter = !Event: RTCPReceived
+eventfilter = !Event: VarSet
+eventfilter = Event: *
+```
+
+### Step 7: Restart Asterisk
+
+```bash
+sudo systemctl restart asterisk
+```
+
+---
+
+## Sample Data in Database
+
+When an extension is created in Laravel, these rows are inserted:
+
+### ps_endpoints
+
+| Column | Example Value |
+|--------|---------------|
+| id | 1001 |
+| transport | transport-udp |
+| aors | 1001 |
+| auth | 1001 |
+| context | from-internal |
+| disallow | all |
+| allow | ulaw,alaw,g722,opus |
+| direct_media | no |
+| force_rport | yes |
+| rewrite_contact | yes |
+| callerid | "John Doe" <1001> |
+| mailboxes | 1001@default |
+| dtmf_mode | rfc4733 |
+
+### ps_auths
+
+| Column | Example Value |
+|--------|---------------|
+| id | 1001 |
+| auth_type | userpass |
+| username | 1001 |
+| password | [plaintext password] |
+
+### ps_aors
+
+| Column | Example Value |
+|--------|---------------|
+| id | 1001 |
+| max_contacts | 1 |
+| remove_existing | yes |
+| qualify_frequency | 60 |
+| default_expiration | 3600 |
+
+---
+
+## Verification Commands
+
+### Test ODBC Connection
+
+```bash
+isql asterisk -v
+```
+
+### Verify Realtime is Working
+
+```bash
+asterisk -rx "realtime show pjsip"
+```
+
+### List Endpoints from Database
+
+```bash
+asterisk -rx "pjsip show endpoints"
+```
+
+### Check Specific Endpoint
+
+```bash
+asterisk -rx "pjsip show endpoint 1001"
+```
+
+### Check Registrations
+
+```bash
+asterisk -rx "pjsip show contacts"
+```
+
+### Check AORs
+
+```bash
+asterisk -rx "pjsip show aors"
+```
+
+---
+
+## Laravel Commands
+
+### Sync All Extensions to PJSIP Tables
+
+```bash
+php artisan asterisk:sync-extensions
+```
+
+### Verify Asterisk Connectivity and Data
+
+```bash
+php artisan asterisk:verify
+```
+
+### Start AMI Event Listener
+
+For real-time status updates (run as a daemon):
+
+```bash
+php artisan ami:listen
+```
+
+For production, use Supervisor:
+
+```ini
+[program:ami-listener]
+process_name=%(program_name)s
+command=php /path/to/mini-pbx/artisan ami:listen
+autostart=true
+autorestart=true
+user=www-data
+redirect_stderr=true
+stdout_logfile=/var/log/mini-pbx/ami-listener.log
+```
+
+---
+
+## AMI Events
+
+The Laravel application listens for these AMI events to update extension status:
+
+| Event | Purpose |
+|-------|---------|
+| `ContactStatus` | Tracks when contacts become reachable/unreachable |
+| `PeerStatus` | Tracks registration/unregistration |
+| `DeviceStateChange` | Tracks call state (idle, ringing, in-use) |
+| `Newchannel` | New call started |
+| `Hangup` | Call ended |
+| `QueueMemberStatus` | Queue agent status changes |
+
+---
+
+## Database Connection Details
+
+| Setting | Value |
+|---------|-------|
+| Host | 127.0.0.1 |
+| Port | 5432 |
+| Database | mini_pbx |
+| Username | postgres |
+| Password | minipbx2025 |
+
+---
+
+## Important Notes
+
+1. **No config file reloads needed** - Changes are immediate via database lookup
+2. **Asterisk writes to `ps_contacts`** - Do not modify this table from Laravel
+3. **Passwords are plaintext** - Required by PJSIP userpass authentication
+4. **Transports stay in pjsip.conf** - Only endpoints use realtime
+5. **AMI must be enabled** - Required for real-time status updates back to Laravel
+6. **Observer auto-syncs** - When extensions are created/updated/deleted in Laravel, they are automatically synced to PJSIP tables
+
+---
+
+## Troubleshooting
+
+### ODBC Connection Fails
+
+```bash
+# Check ODBC configuration
+odbcinst -q -d
+odbcinst -q -s
+
+# Test connection
+isql asterisk -v
+
+# Check PostgreSQL is accepting connections
+psql -h 127.0.0.1 -U postgres -d mini_pbx
+```
+
+### Endpoints Not Showing
+
+```bash
+# Check sorcery configuration
+asterisk -rx "sorcery show wizards"
+
+# Check if realtime is configured
+asterisk -rx "realtime show pjsip"
+
+# Verify data exists in database
+psql -h 127.0.0.1 -U postgres -d mini_pbx -c "SELECT id FROM ps_endpoints;"
+```
+
+### Registration Fails
+
+```bash
+# Check endpoint details
+asterisk -rx "pjsip show endpoint 1001"
+
+# Check auth details
+asterisk -rx "pjsip show auth 1001"
+
+# Check AOR details
+asterisk -rx "pjsip show aor 1001"
+
+# Enable PJSIP debug
+asterisk -rx "pjsip set logger on"
+```
+
+---
+
+## Configuration Files Reference
+
+All example configuration files are available in the Laravel project:
+
+```
+docs/asterisk-config/
+├── README.md
+├── odbc.ini
+├── odbcinst.ini
+├── res_odbc.conf
+├── extconfig.conf
+├── sorcery.conf
+├── pjsip.conf
+├── extensions.conf
+└── manager.conf
+```
+

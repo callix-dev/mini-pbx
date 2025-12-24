@@ -1,59 +1,181 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# Mini-PBX
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+A modern, web-based PBX management system built with Laravel 12 and integrated with Asterisk via PJSIP Realtime.
 
-## About Laravel
+## Features
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+- **Extension Management**: Create, edit, and manage SIP extensions with automatic PJSIP sync
+- **Extension Groups**: Organize extensions into groups with flexible ring strategies
+- **Queue Management**: Configure call queues with agent management
+- **DID Routing**: Route inbound DIDs to extensions, queues, IVRs, or ring trees
+- **IVR Builder**: Create interactive voice response menus
+- **Ring Trees**: Configure multi-level call routing with fallback options
+- **Voicemail**: Voicemail with email notifications
+- **Call Logs**: Comprehensive call history and analytics
+- **Real-time Status**: Live extension registration and call status via AMI
+- **User Management**: Role-based access control with Spatie permissions
+- **API Keys**: Secure API access for external integrations
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+## Requirements
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+- PHP 8.3+
+- PostgreSQL 14+
+- Node.js 20+
+- Asterisk 18+ with PJSIP support
+- Redis (for queues and caching)
 
-## Learning Laravel
+## Installation
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework. You can also check out [Laravel Learn](https://laravel.com/learn), where you will be guided through building a modern Laravel application.
+1. Clone the repository:
+```bash
+git clone https://github.com/callix-dev/mini-pbx.git
+cd mini-pbx
+```
 
-If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+2. Install dependencies:
+```bash
+composer install
+npm install
+```
 
-## Laravel Sponsors
+3. Configure environment:
+```bash
+cp .env.example .env
+php artisan key:generate
+```
 
-We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the [Laravel Partners program](https://partners.laravel.com).
+4. Set up the database:
+```bash
+php artisan migrate
+php artisan db:seed
+```
 
-### Premium Partners
+5. Build frontend assets:
+```bash
+npm run build
+```
 
-- **[Vehikl](https://vehikl.com)**
-- **[Tighten Co.](https://tighten.co)**
-- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
-- **[64 Robots](https://64robots.com)**
-- **[Curotec](https://www.curotec.com/services/technologies/laravel)**
-- **[DevSquad](https://devsquad.com/hire-laravel-developers)**
-- **[Redberry](https://redberry.international/laravel-development)**
-- **[Active Logic](https://activelogic.com)**
+6. Start the development server:
+```bash
+php artisan serve
+```
 
-## Contributing
+## Asterisk Integration
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+Mini-PBX uses PJSIP Realtime to sync extensions directly to Asterisk's database. This means:
 
-## Code of Conduct
+- No config file management needed
+- Changes are immediate (no reload required)
+- Single source of truth in Laravel
+- Real-time status updates via AMI
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+### Setup Asterisk
 
-## Security Vulnerabilities
+1. Install PostgreSQL ODBC driver:
+```bash
+sudo apt-get install unixodbc odbc-postgresql
+```
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+2. Copy the example Asterisk configuration files from `docs/asterisk-config/` to your Asterisk server.
+
+3. Update database credentials in:
+   - `/etc/odbc.ini`
+   - `/etc/asterisk/res_odbc.conf`
+
+4. Restart Asterisk:
+```bash
+sudo systemctl restart asterisk
+```
+
+5. Sync extensions:
+```bash
+php artisan asterisk:sync-extensions
+```
+
+6. Verify configuration:
+```bash
+php artisan asterisk:verify
+```
+
+### Configuration
+
+Add to your `.env`:
+
+```env
+# AMI Configuration
+AMI_HOST=127.0.0.1
+AMI_PORT=5038
+AMI_USERNAME=mini-pbx
+AMI_PASSWORD=your_secure_password
+
+# ARI Configuration (optional)
+ARI_HOST=127.0.0.1
+ARI_PORT=8088
+ARI_USERNAME=admin
+ARI_PASSWORD=your_ari_password
+
+# PJSIP Configuration
+PJSIP_DEFAULT_TRANSPORT=transport-udp
+PJSIP_DEFAULT_CONTEXT=from-internal
+PJSIP_ALLOWED_CODECS=ulaw,alaw,g722,opus
+```
+
+### AMI Event Listener
+
+Start the AMI listener to receive real-time events:
+
+```bash
+php artisan ami:listen
+```
+
+For production, use Supervisor to keep it running:
+
+```ini
+[program:ami-listener]
+process_name=%(program_name)s
+command=php /path/to/mini-pbx/artisan ami:listen
+autostart=true
+autorestart=true
+user=www-data
+redirect_stderr=true
+stdout_logfile=/var/log/mini-pbx/ami-listener.log
+```
+
+## Artisan Commands
+
+| Command | Description |
+|---------|-------------|
+| `php artisan asterisk:sync-extensions` | Sync all extensions to PJSIP tables |
+| `php artisan asterisk:verify` | Verify Asterisk connectivity and config |
+| `php artisan ami:listen` | Start AMI event listener |
+
+## Default Credentials
+
+After seeding, you can login with:
+
+- **Email**: admin@example.com
+- **Password**: password
+
+## Directory Structure
+
+```
+app/
+├── Console/Commands/      # Artisan commands (AMI listener, sync)
+├── Events/               # Broadcasting events
+├── Http/Controllers/     # Web controllers
+├── Models/              # Eloquent models
+├── Observers/           # Model observers (PJSIP sync)
+├── Services/Asterisk/   # Asterisk integration services
+config/
+├── asterisk.php         # Asterisk configuration
+database/
+├── migrations/          # Including PJSIP realtime tables
+docs/
+├── asterisk-config/     # Example Asterisk configuration files
+resources/
+├── views/              # Blade templates
+```
 
 ## License
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+This project is proprietary software. All rights reserved.
