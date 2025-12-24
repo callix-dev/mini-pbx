@@ -92,5 +92,19 @@ class DispositionController extends Controller
         return redirect()->route('dispositions.index')
             ->with('success', 'Disposition deleted successfully.');
     }
+
+    public function reorder(Request $request)
+    {
+        $request->validate([
+            'ids' => 'required|array',
+            'ids.*' => 'exists:dispositions,id',
+        ]);
+
+        foreach ($request->ids as $index => $id) {
+            Disposition::where('id', $id)->update(['sort_order' => $index]);
+        }
+
+        return response()->json(['success' => true]);
+    }
 }
 

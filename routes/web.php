@@ -128,6 +128,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
         // Dispositions
         Route::resource('dispositions', DispositionController::class);
+        Route::post('dispositions/reorder', [DispositionController::class, 'reorder'])->name('dispositions.reorder');
     });
 
     // Platform Routes (Admin only)

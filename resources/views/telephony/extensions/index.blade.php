@@ -1,13 +1,16 @@
 <x-app-layout>
+    @section('title', 'Extensions')
+    @section('page-title', 'Extensions')
+
     <x-slot name="header">
         <div class="flex items-center justify-between">
             <div>
-                <h2 class="text-xl font-semibold leading-tight text-gray-800 dark:text-gray-200">Extensions</h2>
+                <h2 class="text-2xl font-bold text-gray-900 dark:text-white">Extensions</h2>
                 <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
                     Manage PJSIP extensions for your PBX system
                 </p>
             </div>
-            <div class="flex items-center gap-3">
+            <div class="flex items-center space-x-3">
                 <a href="{{ route('extensions.create') }}" class="btn-primary">
                     <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
@@ -34,177 +37,181 @@
         </div>
     </x-slot>
 
-    <div class="py-6">
-        <div class="mx-auto max-w-7xl sm:px-6 lg:px-8">
-            <!-- Filters -->
-            <div class="card mb-6">
-                <div class="card-body">
-                    <form method="GET" class="flex flex-wrap items-center gap-4">
-                        <div class="flex-1 min-w-[200px]">
-                            <input type="text" name="search" value="{{ request('search') }}" 
-                                   placeholder="Search extensions..."
-                                   class="form-input">
-                        </div>
-                        <div class="w-40">
-                            <select name="status" class="form-select">
-                                <option value="">All Statuses</option>
-                                <option value="online" {{ request('status') === 'online' ? 'selected' : '' }}>Online</option>
-                                <option value="offline" {{ request('status') === 'offline' ? 'selected' : '' }}>Offline</option>
-                                <option value="ringing" {{ request('status') === 'ringing' ? 'selected' : '' }}>Ringing</option>
-                                <option value="on_call" {{ request('status') === 'on_call' ? 'selected' : '' }}>On Call</option>
-                            </select>
-                        </div>
-                        <div class="w-32">
-                            <select name="active" class="form-select">
-                                <option value="">All</option>
-                                <option value="yes" {{ request('active') === 'yes' ? 'selected' : '' }}>Active</option>
-                                <option value="no" {{ request('active') === 'no' ? 'selected' : '' }}>Inactive</option>
-                            </select>
-                        </div>
-                        <button type="submit" class="btn-primary">Filter</button>
-                        @if(request()->hasAny(['search', 'status', 'active']))
-                            <a href="{{ route('extensions.index') }}" class="btn-secondary">Clear</a>
-                        @endif
-                    </form>
-                </div>
+    <!-- Filters -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4 mb-6">
+        <form method="GET" class="flex flex-wrap items-center gap-4">
+            <div class="flex-1 min-w-[200px]">
+                <input type="text" name="search" value="{{ request('search') }}" 
+                       placeholder="Search extensions..."
+                       class="form-input">
             </div>
+            <div class="w-40">
+                <select name="status" class="form-select">
+                    <option value="">All Statuses</option>
+                    <option value="online" {{ request('status') === 'online' ? 'selected' : '' }}>Online</option>
+                    <option value="offline" {{ request('status') === 'offline' ? 'selected' : '' }}>Offline</option>
+                    <option value="ringing" {{ request('status') === 'ringing' ? 'selected' : '' }}>Ringing</option>
+                    <option value="on_call" {{ request('status') === 'on_call' ? 'selected' : '' }}>On Call</option>
+                </select>
+            </div>
+            <div class="w-32">
+                <select name="active" class="form-select">
+                    <option value="">All</option>
+                    <option value="yes" {{ request('active') === 'yes' ? 'selected' : '' }}>Active</option>
+                    <option value="no" {{ request('active') === 'no' ? 'selected' : '' }}>Inactive</option>
+                </select>
+            </div>
+            <button type="submit" class="btn-primary">Filter</button>
+            @if(request()->hasAny(['search', 'status', 'active']))
+                <a href="{{ route('extensions.index') }}" class="btn-secondary">Clear</a>
+            @endif
+        </form>
+    </div>
 
-            <!-- Extensions Table -->
-            <div class="card">
-                <div class="card-body p-0">
-                    <div class="overflow-x-auto">
-                        <table class="data-table">
-                            <thead>
-                                <tr>
-                                    <th class="w-12">
-                                        <input type="checkbox" id="select-all" class="rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500">
-                                    </th>
-                                    <th>Extension</th>
-                                    <th>Name</th>
-                                    <th>User</th>
-                                    <th>Status</th>
-                                    <th>Groups</th>
-                                    <th>Active</th>
-                                    <th class="text-right">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                @forelse($extensions as $extension)
-                                    <tr>
-                                        <td>
-                                            <input type="checkbox" name="ids[]" value="{{ $extension->id }}" 
-                                                   class="extension-checkbox rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500">
-                                        </td>
-                                        <td>
-                                            <span class="font-mono font-medium text-primary-600 dark:text-primary-400">
-                                                {{ $extension->extension }}
-                                            </span>
-                                        </td>
-                                        <td>
-                                            <div class="flex items-center">
-                                                <div class="flex-shrink-0 w-8 h-8 bg-gray-200 dark:bg-gray-700 rounded-full flex items-center justify-center">
-                                                    <span class="text-sm font-medium text-gray-600 dark:text-gray-300">
-                                                        {{ strtoupper(substr($extension->name, 0, 2)) }}
-                                                    </span>
-                                                </div>
-                                                <span class="ml-3 text-gray-900 dark:text-white">{{ $extension->name }}</span>
-                                            </div>
-                                        </td>
-                                        <td>
-                                            @if($extension->user)
-                                                <span class="text-gray-900 dark:text-gray-100">{{ $extension->user->name }}</span>
-                                            @else
-                                                <span class="text-gray-400 dark:text-gray-500">Unassigned</span>
-                                            @endif
-                                        </td>
-                                        <td>
-                                            @php
-                                                $statusColors = [
-                                                    'online' => 'badge-success',
-                                                    'offline' => 'badge-gray',
-                                                    'ringing' => 'badge-warning',
-                                                    'on_call' => 'badge-danger',
-                                                ];
-                                            @endphp
-                                            <span class="badge {{ $statusColors[$extension->status] ?? 'badge-gray' }}">
-                                                {{ ucfirst(str_replace('_', ' ', $extension->status)) }}
-                                            </span>
-                                        </td>
-                                        <td>
-                                            @if($extension->groups->count() > 0)
-                                                <div class="flex flex-wrap gap-1">
-                                                    @foreach($extension->groups->take(2) as $group)
-                                                        <span class="badge badge-info text-xs">{{ $group->name }}</span>
-                                                    @endforeach
-                                                    @if($extension->groups->count() > 2)
-                                                        <span class="badge badge-gray text-xs">+{{ $extension->groups->count() - 2 }}</span>
-                                                    @endif
-                                                </div>
-                                            @else
-                                                <span class="text-gray-400 dark:text-gray-500">-</span>
-                                            @endif
-                                        </td>
-                                        <td>
-                                            <form action="{{ route('extensions.toggle-status', $extension) }}" method="POST" class="inline">
-                                                @csrf
-                                                @method('PATCH')
-                                                <button type="submit" class="relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none {{ $extension->is_active ? 'bg-primary-600' : 'bg-gray-300 dark:bg-gray-600' }}">
-                                                    <span class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out {{ $extension->is_active ? 'translate-x-5' : 'translate-x-0' }}"></span>
-                                                </button>
-                                            </form>
-                                        </td>
-                                        <td class="text-right">
-                                            <div class="flex items-center justify-end gap-1">
-                                                <a href="{{ route('extensions.show', $extension) }}" class="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700" title="View">
-                                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
-                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
-                                                    </svg>
-                                                </a>
-                                                <a href="{{ route('extensions.edit', $extension) }}" class="p-2 text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700" title="Edit">
-                                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
-                                                    </svg>
-                                                </a>
-                                                <form action="{{ route('extensions.destroy', $extension) }}" method="POST" class="inline" onsubmit="return confirm('Delete this extension?')">
-                                                    @csrf
-                                                    @method('DELETE')
-                                                    <button type="submit" class="p-2 text-gray-400 hover:text-red-600 dark:hover:text-red-400 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700" title="Delete">
-                                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
-                                                        </svg>
-                                                    </button>
-                                                </form>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                @empty
-                                    <tr>
-                                        <td colspan="8" class="text-center py-12">
-                                            <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/>
+    <!-- Extensions Table -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <div class="table-container">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th class="w-12">
+                            <input type="checkbox" id="select-all" class="rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500">
+                        </th>
+                        <th>Extension</th>
+                        <th>Name</th>
+                        <th>User</th>
+                        <th>Status</th>
+                        <th>Groups</th>
+                        <th>Active</th>
+                        <th class="text-right">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @forelse($extensions as $extension)
+                        <tr>
+                            <td>
+                                <input type="checkbox" name="ids[]" value="{{ $extension->id }}" 
+                                       class="extension-checkbox rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500">
+                            </td>
+                            <td>
+                                <span class="font-mono font-medium text-primary-600 dark:text-primary-400">
+                                    {{ $extension->extension }}
+                                </span>
+                            </td>
+                            <td>
+                                <div class="flex items-center">
+                                    <div class="flex-shrink-0 w-8 h-8 bg-gray-200 dark:bg-gray-700 rounded-full flex items-center justify-center">
+                                        <span class="text-sm font-medium text-gray-600 dark:text-gray-300">
+                                            {{ strtoupper(substr($extension->name, 0, 2)) }}
+                                        </span>
+                                    </div>
+                                    <span class="ml-3 font-medium text-gray-900 dark:text-white">{{ $extension->name }}</span>
+                                </div>
+                            </td>
+                            <td>
+                                @if($extension->user)
+                                    <span class="text-gray-900 dark:text-gray-100">{{ $extension->user->name }}</span>
+                                @else
+                                    <span class="text-gray-400 dark:text-gray-500">Unassigned</span>
+                                @endif
+                            </td>
+                            <td>
+                                @php
+                                    $statusColors = [
+                                        'online' => 'badge-success',
+                                        'offline' => 'badge-gray',
+                                        'ringing' => 'badge-warning',
+                                        'on_call' => 'badge-danger',
+                                    ];
+                                @endphp
+                                <span class="badge {{ $statusColors[$extension->status] ?? 'badge-gray' }}">
+                                    {{ ucfirst(str_replace('_', ' ', $extension->status)) }}
+                                </span>
+                            </td>
+                            <td>
+                                @if($extension->groups->count() > 0)
+                                    <div class="flex flex-wrap gap-1">
+                                        @foreach($extension->groups->take(2) as $group)
+                                            <span class="badge badge-info text-xs">{{ $group->name }}</span>
+                                        @endforeach
+                                        @if($extension->groups->count() > 2)
+                                            <span class="badge badge-gray text-xs">+{{ $extension->groups->count() - 2 }}</span>
+                                        @endif
+                                    </div>
+                                @else
+                                    <span class="text-gray-400 dark:text-gray-500">-</span>
+                                @endif
+                            </td>
+                            <td>
+                                <form action="{{ route('extensions.toggle-status', $extension) }}" method="POST" class="inline">
+                                    @csrf
+                                    @method('PATCH')
+                                    <button type="submit" class="relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none {{ $extension->is_active ? 'bg-primary-600' : 'bg-gray-300 dark:bg-gray-600' }}">
+                                        <span class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out {{ $extension->is_active ? 'translate-x-5' : 'translate-x-0' }}"></span>
+                                    </button>
+                                </form>
+                            </td>
+                            <td class="text-right">
+                                <div class="flex items-center justify-end space-x-2">
+                                    <a href="{{ route('extensions.show', $extension) }}" 
+                                       class="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
+                                       title="View">
+                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                                        </svg>
+                                    </a>
+                                    <a href="{{ route('extensions.edit', $extension) }}" 
+                                       class="p-2 text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
+                                       title="Edit">
+                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                                        </svg>
+                                    </a>
+                                    <form action="{{ route('extensions.destroy', $extension) }}" method="POST" class="inline" 
+                                          onsubmit="return confirm('Are you sure you want to delete this extension?')">
+                                        @csrf
+                                        @method('DELETE')
+                                        <button type="submit" 
+                                                class="p-2 text-gray-400 hover:text-red-600 dark:hover:text-red-400 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
+                                                title="Delete">
+                                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
                                             </svg>
-                                            <h3 class="mt-2 text-sm font-medium text-gray-900 dark:text-white">No extensions found</h3>
-                                            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Get started by creating a new extension.</p>
-                                            <div class="mt-6 flex justify-center gap-3">
-                                                <a href="{{ route('extensions.create') }}" class="btn-primary">New Extension</a>
-                                                <button type="button" onclick="openBulkCreateModal()" class="btn-secondary">Bulk Create</button>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                @endforelse
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-                
-                @if($extensions->hasPages())
-                    <div class="card-footer">
-                        {{ $extensions->withQueryString()->links() }}
-                    </div>
-                @endif
-            </div>
+                                        </button>
+                                    </form>
+                                </div>
+                            </td>
+                        </tr>
+                    @empty
+                        <tr>
+                            <td colspan="8" class="text-center py-12">
+                                <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/>
+                                </svg>
+                                <h3 class="mt-2 text-sm font-medium text-gray-900 dark:text-white">No extensions found</h3>
+                                <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Get started by creating a new extension.</p>
+                                <div class="mt-6 flex justify-center gap-3">
+                                    <a href="{{ route('extensions.create') }}" class="btn-primary">
+                                        <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
+                                        </svg>
+                                        New Extension
+                                    </a>
+                                    <button type="button" onclick="openBulkCreateModal()" class="btn-secondary">Bulk Create</button>
+                                </div>
+                            </td>
+                        </tr>
+                    @endforelse
+                </tbody>
+            </table>
         </div>
+
+        @if($extensions->hasPages())
+            <div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700">
+                {{ $extensions->withQueryString()->links() }}
+            </div>
+        @endif
     </div>
 
     <!-- Bulk Actions Bar -->
