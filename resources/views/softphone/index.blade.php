@@ -6,17 +6,17 @@
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>Softphone - {{ config('app.name') }}</title>
     
+    <!-- Critical CSS to prevent flash -->
+    <style>
+        html, body { background-color: #111827; }
+        body { overflow: hidden; }
+    </style>
+    
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.bunny.net">
     <link href="https://fonts.bunny.net/css?family=inter:400,500,600,700&display=swap" rel="stylesheet" />
     
     @vite(['resources/css/app.css', 'resources/js/app.js'])
-    
-    <style>
-        body {
-            overflow: hidden;
-        }
-    </style>
 </head>
 <body class="font-sans antialiased bg-gray-900 text-gray-100" x-data="softphoneApp()" x-init="init()">
     
