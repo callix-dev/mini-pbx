@@ -82,6 +82,15 @@
         <div class="bg-gray-800 px-4 py-2 border-b border-gray-700 flex-shrink-0">
             <div class="flex items-center justify-between text-sm">
                 <div class="flex items-center space-x-2">
+                    <template x-if="callState === 'connecting'">
+                        <span class="text-blue-400 flex items-center">
+                            <svg class="animate-spin -ml-1 mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            Connecting...
+                        </span>
+                    </template>
                     <template x-if="callState === 'idle' || callState === 'registered'">
                         <span class="text-gray-400" x-text="micPermission === 'granted' ? 'Ready to make calls' : 'Waiting for mic permission...'"></span>
                     </template>
@@ -104,17 +113,18 @@
         <!-- Main Content -->
         <div class="flex-1 flex flex-col p-4 overflow-hidden">
             
-            <!-- Idle State - Dial Pad -->
-            <div x-show="callState === 'idle' || callState === 'registered'" class="flex-1 flex flex-col">
+            <!-- Dial Pad (Always visible, but disabled when not registered) -->
+            <div x-show="!isInCall" class="flex-1 flex flex-col" :class="{ 'opacity-60': !isRegistered }">
                 <!-- Display -->
                 <div class="relative mb-4">
                     <input type="text" 
                            x-model="dialNumber" 
                            x-ref="dialInput"
-                           @keydown.enter="makeCall()"
-                           placeholder="Enter number..."
-                           class="w-full text-center text-2xl font-mono bg-gray-800 border border-gray-600 rounded-xl py-4 pr-12 focus:ring-primary-500 focus:border-primary-500 text-white placeholder-gray-500">
-                    <button x-show="dialNumber" 
+                           @keydown.enter="isRegistered && makeCall()"
+                           :disabled="!isRegistered"
+                           :placeholder="isRegistered ? 'Enter number...' : 'Waiting for connection...'"
+                           class="w-full text-center text-2xl font-mono bg-gray-800 border border-gray-600 rounded-xl py-4 pr-12 focus:ring-primary-500 focus:border-primary-500 text-white placeholder-gray-500 disabled:cursor-not-allowed disabled:opacity-70">
+                    <button x-show="dialNumber && isRegistered" 
                             @click="dialNumber = dialNumber.slice(0, -1)" 
                             class="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white p-1">
                         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -126,10 +136,14 @@
                 <!-- Dial Pad -->
                 <div class="grid grid-cols-3 gap-2 mb-4 flex-1">
                     <template x-for="key in dialpadKeys" :key="key.main">
-                        <button @click="addDigit(key.main)" 
-                                class="flex flex-col items-center justify-center bg-gray-800 hover:bg-gray-700 active:bg-gray-600 rounded-xl transition-all duration-150 active:scale-95 min-h-[60px]">
-                            <span class="text-2xl font-medium text-white" x-text="key.main"></span>
-                            <span class="text-[10px] text-gray-500 tracking-widest" x-text="key.sub" x-show="key.sub"></span>
+                        <button @click="isRegistered && addDigit(key.main)" 
+                                :disabled="!isRegistered"
+                                :class="isRegistered 
+                                    ? 'bg-gray-800 hover:bg-gray-700 active:bg-gray-600 active:scale-95' 
+                                    : 'bg-gray-800/50 cursor-not-allowed'"
+                                class="flex flex-col items-center justify-center rounded-xl transition-all duration-150 min-h-[60px]">
+                            <span class="text-2xl font-medium" :class="isRegistered ? 'text-white' : 'text-gray-500'" x-text="key.main"></span>
+                            <span class="text-[10px] tracking-widest" :class="isRegistered ? 'text-gray-500' : 'text-gray-600'" x-text="key.sub" x-show="key.sub"></span>
                         </button>
                     </template>
                 </div>
@@ -137,7 +151,9 @@
                 <!-- Call Button -->
                 <button @click="makeCall()" 
                         :disabled="!dialNumber || !isRegistered"
-                        :class="{ 'opacity-50 cursor-not-allowed': !dialNumber || !isRegistered }"
+                        :class="!isRegistered 
+                            ? 'bg-gray-600 cursor-not-allowed' 
+                            : (!dialNumber ? 'opacity-50 cursor-not-allowed bg-green-600' : 'bg-green-600 hover:bg-green-500')"
                         class="w-full bg-green-600 hover:bg-green-500 text-white py-4 rounded-xl font-semibold flex items-center justify-center space-x-2 transition-all active:scale-[0.98]">
                     <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/>
@@ -299,6 +315,10 @@
             errorMessage: '',
             micPermission: 'prompt', // 'prompt', 'granted', 'denied'
             
+            get isInCall() {
+                return ['ringing', 'calling', 'connected'].includes(this.callState);
+            },
+            
             dialpadKeys: [
                 { main: '1', sub: '' },
                 { main: '2', sub: 'ABC' },
@@ -319,6 +339,9 @@
                 window.addEventListener('webphone:statechange', (e) => this.handleStateChange(e.detail));
                 window.addEventListener('webphone:error', (e) => this.handleError(e.detail));
                 
+                // Start heartbeat to let main window know we're open
+                this.startHeartbeat();
+                
                 // Check and request permissions
                 await this.checkMicPermission();
                 
@@ -326,6 +349,60 @@
                 if ('Notification' in window && Notification.permission === 'default') {
                     Notification.requestPermission();
                 }
+                
+                // Clean up heartbeat when window closes
+                window.addEventListener('beforeunload', () => {
+                    localStorage.removeItem('mini-pbx-phone-heartbeat');
+                });
+            },
+            
+            startHeartbeat() {
+                // Send heartbeat immediately
+                localStorage.setItem('mini-pbx-phone-heartbeat', Date.now().toString());
+                
+                // Send heartbeat every second
+                setInterval(() => {
+                    localStorage.setItem('mini-pbx-phone-heartbeat', Date.now().toString());
+                }, 1000);
+            },
+            
+            // Text-to-Speech for status announcements
+            speak(message) {
+                if ('speechSynthesis' in window) {
+                    // Cancel any ongoing speech
+                    window.speechSynthesis.cancel();
+                    
+                    const utterance = new SpeechSynthesisUtterance(message);
+                    utterance.rate = 1.0;
+                    utterance.pitch = 1.0;
+                    utterance.volume = 0.8;
+                    
+                    // Try to use a good voice
+                    const voices = window.speechSynthesis.getVoices();
+                    const preferredVoice = voices.find(v => 
+                        v.name.includes('Google') || 
+                        v.name.includes('Samantha') || 
+                        v.name.includes('Microsoft') ||
+                        v.lang.startsWith('en')
+                    );
+                    if (preferredVoice) {
+                        utterance.voice = preferredVoice;
+                    }
+                    
+                    window.speechSynthesis.speak(utterance);
+                }
+            },
+            
+            announceRegistering() {
+                this.speak('Trying to register phone');
+            },
+            
+            announceRegistered() {
+                this.speak('Your phone is connected successfully');
+            },
+            
+            announceRegistrationFailed() {
+                this.speak('Phone registration failed');
             },
             
             async checkMicPermission() {
@@ -405,12 +482,25 @@
                 console.log('Softphone state change:', detail);
                 
                 if (detail.state) {
+                    const previousState = this.callState;
+                    const wasRegistered = this.isRegistered;
                     this.callState = detail.state;
                     
-                    if (detail.state === 'registered') {
+                    if (detail.state === 'connecting') {
+                        // Announce attempting to register
+                        this.announceRegistering();
+                    } else if (detail.state === 'registered') {
                         this.isRegistered = true;
                         this.errorMessage = '';
+                        // Announce successful registration (only if we weren't already registered)
+                        if (!wasRegistered) {
+                            this.announceRegistered();
+                        }
                     } else if (detail.state === 'unregistered' || detail.state === 'disconnected') {
+                        // Announce failure if we were trying to connect
+                        if (wasRegistered || previousState === 'connecting') {
+                            this.announceRegistrationFailed();
+                        }
                         this.isRegistered = false;
                     } else if (detail.state === 'idle') {
                         this.resetCallState();
@@ -438,8 +528,51 @@
                 this.transferNumber = '';
             },
             
+            // DTMF frequencies for each key
+            dtmfFrequencies: {
+                '1': [697, 1209], '2': [697, 1336], '3': [697, 1477],
+                '4': [770, 1209], '5': [770, 1336], '6': [770, 1477],
+                '7': [852, 1209], '8': [852, 1336], '9': [852, 1477],
+                '*': [941, 1209], '0': [941, 1336], '#': [941, 1477]
+            },
+            audioContext: null,
+            
             addDigit(digit) {
                 this.dialNumber += digit;
+                this.playDTMFTone(digit);
+            },
+            
+            playDTMFTone(digit) {
+                try {
+                    // Create audio context if needed
+                    if (!this.audioContext) {
+                        this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    }
+                    
+                    const frequencies = this.dtmfFrequencies[digit];
+                    if (!frequencies) return;
+                    
+                    const duration = 0.15; // 150ms tone
+                    const now = this.audioContext.currentTime;
+                    
+                    // Create gain node for volume control
+                    const gainNode = this.audioContext.createGain();
+                    gainNode.connect(this.audioContext.destination);
+                    gainNode.gain.setValueAtTime(0.3, now);
+                    gainNode.gain.exponentialRampToValueAtTime(0.01, now + duration);
+                    
+                    // Create two oscillators for the dual-tone
+                    frequencies.forEach(freq => {
+                        const oscillator = this.audioContext.createOscillator();
+                        oscillator.type = 'sine';
+                        oscillator.frequency.setValueAtTime(freq, now);
+                        oscillator.connect(gainNode);
+                        oscillator.start(now);
+                        oscillator.stop(now + duration);
+                    });
+                } catch (e) {
+                    console.warn('Could not play DTMF tone:', e);
+                }
             },
             
             makeCall() {
@@ -495,6 +628,7 @@
             sendDTMF(digit) {
                 if (window.webPhone) {
                     window.webPhone.sendDTMF(digit);
+                    this.playDTMFTone(digit);
                 }
             }
         }

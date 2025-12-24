@@ -116,6 +116,12 @@ class Softphone {
             const aor = `sip:${this.credentials.extension}@${this.credentials.realm}`;
             
             console.log('Connecting to:', server, 'as', aor);
+            
+            // Announce connecting state
+            this.dispatchEvent('statechange', { 
+                state: 'connecting',
+                isRegistered: false 
+            });
 
             const options = {
                 aor: aor,
