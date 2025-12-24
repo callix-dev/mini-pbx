@@ -35,9 +35,47 @@
                 </div>
             </div>
             <div class="flex items-center space-x-2">
+                <!-- Mic permission indicator -->
+                <span x-show="micPermission === 'granted'" class="text-green-400" title="Microphone enabled">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/>
+                    </svg>
+                </span>
+                <span x-show="micPermission === 'denied'" class="text-red-400" title="Microphone blocked">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2"/>
+                    </svg>
+                </span>
                 <span class="w-2 h-2 rounded-full" :class="isRegistered ? 'bg-green-400' : 'bg-red-400'"></span>
                 <span class="text-xs" x-text="isRegistered ? 'Online' : 'Offline'"></span>
             </div>
+        </div>
+
+        <!-- Permission Request Banner -->
+        <div x-show="micPermission === 'prompt'" 
+             class="bg-blue-600 px-4 py-3 flex items-center justify-between flex-shrink-0">
+            <div class="flex items-center space-x-3 text-white">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/>
+                </svg>
+                <span class="text-sm">Microphone access required</span>
+            </div>
+            <button @click="requestMicPermission()" 
+                    class="px-3 py-1 bg-white text-blue-600 rounded-lg text-sm font-medium hover:bg-blue-50">
+                Allow
+            </button>
+        </div>
+
+        <!-- Permission Denied Banner -->
+        <div x-show="micPermission === 'denied'" 
+             class="bg-red-600 px-4 py-3 flex-shrink-0">
+            <div class="flex items-center space-x-3 text-white mb-2">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                </svg>
+                <span class="text-sm font-medium">Microphone access blocked</span>
+            </div>
+            <p class="text-xs text-white/80">Click the lock/camera icon in your browser's address bar to enable microphone access, then refresh.</p>
         </div>
 
         <!-- Status Bar -->
@@ -45,7 +83,7 @@
             <div class="flex items-center justify-between text-sm">
                 <div class="flex items-center space-x-2">
                     <template x-if="callState === 'idle' || callState === 'registered'">
-                        <span class="text-gray-400">Ready to make calls</span>
+                        <span class="text-gray-400" x-text="micPermission === 'granted' ? 'Ready to make calls' : 'Waiting for mic permission...'"></span>
                     </template>
                     <template x-if="callState === 'calling'">
                         <span class="text-blue-400">Calling...</span>
@@ -259,6 +297,7 @@
             showTransfer: false,
             showKeypad: false,
             errorMessage: '',
+            micPermission: 'prompt', // 'prompt', 'granted', 'denied'
             
             dialpadKeys: [
                 { main: '1', sub: '' },
@@ -275,14 +314,90 @@
                 { main: '#', sub: '' },
             ],
             
-            init() {
+            async init() {
                 // Listen for webphone events
                 window.addEventListener('webphone:statechange', (e) => this.handleStateChange(e.detail));
                 window.addEventListener('webphone:error', (e) => this.handleError(e.detail));
                 
+                // Check and request permissions
+                await this.checkMicPermission();
+                
                 // Request notification permission
                 if ('Notification' in window && Notification.permission === 'default') {
                     Notification.requestPermission();
+                }
+            },
+            
+            async checkMicPermission() {
+                try {
+                    // Check current permission status
+                    if (navigator.permissions) {
+                        const result = await navigator.permissions.query({ name: 'microphone' });
+                        this.micPermission = result.state;
+                        
+                        // Listen for permission changes
+                        result.onchange = () => {
+                            this.micPermission = result.state;
+                            if (result.state === 'granted') {
+                                // Re-initialize webphone if permission granted
+                                if (window.webPhone && !window.webPhone.isRegistered) {
+                                    window.webPhone.connect();
+                                }
+                            }
+                        };
+                        
+                        // If already granted, we're good
+                        if (result.state === 'granted') {
+                            return;
+                        }
+                        
+                        // If prompt, request permission immediately
+                        if (result.state === 'prompt') {
+                            await this.requestMicPermission();
+                        }
+                    } else {
+                        // Fallback: try requesting directly
+                        await this.requestMicPermission();
+                    }
+                } catch (error) {
+                    console.error('Permission check error:', error);
+                    // Fallback: try requesting
+                    await this.requestMicPermission();
+                }
+            },
+            
+            async requestMicPermission() {
+                try {
+                    // Request microphone access
+                    const stream = await navigator.mediaDevices.getUserMedia({ 
+                        audio: {
+                            echoCancellation: true,
+                            noiseSuppression: true,
+                            autoGainControl: true
+                        } 
+                    });
+                    
+                    // Permission granted - stop the test stream
+                    stream.getTracks().forEach(track => track.stop());
+                    
+                    this.micPermission = 'granted';
+                    console.log('Microphone permission granted');
+                    
+                    // Initialize webphone now that we have permission
+                    if (window.webPhone && !window.webPhone.isRegistered) {
+                        window.webPhone.connect();
+                    }
+                } catch (error) {
+                    console.error('Microphone permission error:', error);
+                    
+                    if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
+                        this.micPermission = 'denied';
+                    } else if (error.name === 'NotFoundError') {
+                        this.errorMessage = 'No microphone found on this device';
+                        this.micPermission = 'denied';
+                    } else {
+                        this.errorMessage = 'Could not access microphone: ' + error.message;
+                    }
                 }
             },
             
