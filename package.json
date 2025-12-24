@@ -20,6 +20,7 @@
     },
     "dependencies": {
         "laravel-echo": "^2.2.6",
-        "pusher-js": "^8.4.0"
+        "pusher-js": "^8.4.0",
+        "sip.js": "^0.21.2"
     }
 }
