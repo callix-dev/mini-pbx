@@ -360,6 +360,10 @@
                     this.activeCalls = Math.max(0, this.activeCalls - 1);
                     document.getElementById('active-calls-count').textContent = this.activeCalls;
                 });
+
+                // Poll for live extension status every 10 seconds
+                this.pollExtensionStatus();
+                setInterval(() => this.pollExtensionStatus(), 10000);
             },
             
             updateExtensionCount(data) {
@@ -370,6 +374,54 @@
                     this.extensionsOnline = Math.max(0, this.extensionsOnline - 1);
                 }
                 document.getElementById('extensions-online-count').textContent = this.extensionsOnline;
+            },
+
+            async pollExtensionStatus() {
+                try {
+                    const response = await fetch('/api/extensions/status');
+                    if (!response.ok) return;
+                    
+                    const data = await response.json();
+                    if (!data.success) return;
+
+                    // Update counts
+                    this.extensionsOnline = data.summary.online;
+                    document.getElementById('extensions-online-count').textContent = data.summary.online;
+
+                    // Update extension status badges
+                    data.extensions.forEach(ext => {
+                        const row = document.querySelector(`[data-extension-id="${ext.id}"]`);
+                        if (row) {
+                            const statusDot = row.querySelector('.absolute.bottom-0.right-0');
+                            const statusBadge = row.querySelector('.status-badge');
+                            
+                            // Update status dot color
+                            if (statusDot) {
+                                statusDot.className = 'absolute bottom-0 right-0 w-3 h-3 border-2 border-white dark:border-gray-800 rounded-full ' + 
+                                    (ext.status === 'online' ? 'bg-green-500' : 
+                                     ext.status === 'on_call' ? 'bg-red-500' : 
+                                     ext.status === 'ringing' ? 'bg-yellow-500' : 'bg-gray-400');
+                            }
+
+                            // Update status badge
+                            if (statusBadge) {
+                                const badgeClass = ext.status === 'online' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400' :
+                                                   ext.status === 'on_call' ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400' :
+                                                   ext.status === 'ringing' ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400' :
+                                                   'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-400';
+                                statusBadge.className = 'status-badge px-2 py-1 text-xs font-medium rounded-full ' + badgeClass;
+                                statusBadge.textContent = ext.status.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase());
+                            }
+                        }
+                    });
+
+                    // Update online/on-call counts in subtitle
+                    const onCallCount = data.extensions.filter(e => e.status === 'on_call').length;
+                    const onlineCount = data.extensions.filter(e => e.status === 'online').length;
+                    
+                } catch (error) {
+                    console.log('Failed to poll extension status:', error);
+                }
             }
         }
     }

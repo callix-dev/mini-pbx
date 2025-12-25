@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Models\AuditLog;
 use Illuminate\Http\Request;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
 use Illuminate\Support\Str;
 
@@ -15,6 +16,9 @@ class ExtensionController extends Controller
 {
     public function index(Request $request): View
     {
+        // Sync extension status from Asterisk realtime tables
+        $this->syncExtensionStatus();
+
         $query = Extension::with(['user', 'groups']);
 
         if ($request->filled('search')) {
@@ -343,5 +347,41 @@ class ExtensionController extends Controller
         }
         
         return $password;
+    }
+
+    /**
+     * Sync extension registration status from Asterisk realtime tables (ps_contacts)
+     */
+    protected function syncExtensionStatus(): void
+    {
+        try {
+            // Get all registered contacts from Asterisk's realtime table
+            $contacts = DB::table('ps_contacts')
+                ->pluck('via_addr', 'endpoint')
+                ->toArray();
+
+            // Update all extensions based on registration status
+            Extension::chunk(100, function ($extensions) use ($contacts) {
+                foreach ($extensions as $extension) {
+                    $isRegistered = isset($contacts[$extension->extension]);
+                    $newStatus = $isRegistered ? 'online' : 'offline';
+
+                    // Only update if not on_call/ringing (those are controlled by call events)
+                    if (!in_array($extension->status, ['on_call', 'ringing'])) {
+                        if ($extension->status !== $newStatus) {
+                            $extension->status = $newStatus;
+                            if ($isRegistered) {
+                                $extension->last_registered_at = now();
+                                $extension->last_registered_ip = $contacts[$extension->extension];
+                            }
+                            $extension->saveQuietly(); // Don't trigger observer to avoid loop
+                        }
+                    }
+                }
+            });
+        } catch (\Exception $e) {
+            // Silently fail if ps_contacts table doesn't exist or DB error
+            \Log::warning('Failed to sync extension status: ' . $e->getMessage());
+        }
     }
 }

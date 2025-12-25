@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\ExtensionStatusController;
 use App\Http\Controllers\Api\WebPhoneController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -40,5 +41,25 @@ Route::middleware(['web', 'auth'])->prefix('webphone')->group(function () {
     
     // Get dial settings
     Route::get('/settings', [WebPhoneController::class, 'dialSettings']);
+});
+
+/*
+|--------------------------------------------------------------------------
+| Extension Status API Routes
+|--------------------------------------------------------------------------
+|
+| Live extension registration status from Asterisk
+|
+*/
+
+Route::middleware(['web', 'auth'])->prefix('extensions')->group(function () {
+    // Get live status for all extensions
+    Route::get('/status', [ExtensionStatusController::class, 'index']);
+    
+    // Get status for a single extension
+    Route::get('/status/{extension}', [ExtensionStatusController::class, 'show']);
+    
+    // Sync all statuses from Asterisk
+    Route::post('/sync-status', [ExtensionStatusController::class, 'sync']);
 });
 
