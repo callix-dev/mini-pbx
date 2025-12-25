@@ -13,7 +13,7 @@ return new class extends Migration
             $table->foreignId('user_id')->nullable()->constrained()->nullOnDelete();
             $table->string('user_name')->nullable();
             $table->string('action'); // created, updated, deleted, login, logout, etc.
-            $table->string('auditable_type');
+            $table->string('auditable_type')->nullable();
             $table->unsignedBigInteger('auditable_id')->nullable();
             $table->json('old_values')->nullable();
             $table->json('new_values')->nullable();

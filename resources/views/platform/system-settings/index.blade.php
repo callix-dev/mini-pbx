@@ -274,8 +274,8 @@
             </div>
         </div>
 
-        <div class="flex items-center justify-end">
-            <button type="submit" class="btn-primary">
+        <div class="flex items-center justify-center py-4">
+            <button type="submit" class="btn-primary px-8">
                 <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
                 </svg>
