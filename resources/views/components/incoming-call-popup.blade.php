@@ -2,6 +2,7 @@
 <div x-data="incomingCallPopup()" 
      x-show="showPopup" 
      x-cloak
+     x-init="init()"
      @incoming-call.window="handleIncomingCall($event.detail)"
      class="fixed inset-0 z-[100] overflow-y-auto"
      aria-labelledby="incoming-call-title" 
@@ -128,6 +129,21 @@ function incomingCallPopup() {
         timerInterval: null,
         startTime: null,
         callData: null,
+        channel: null,
+
+        init() {
+            // Listen for call state changes to auto-close popup
+            this.channel = new BroadcastChannel('webphone_sync');
+            this.channel.onmessage = (event) => {
+                if (event.data.type === 'statechange' && event.data.state) {
+                    const state = event.data.state;
+                    // Close popup if call state changes from ringing
+                    if (state.callState && state.callState !== 'ringing' && this.showPopup) {
+                        this.closePopup();
+                    }
+                }
+            };
+        },
 
         handleIncomingCall(call) {
             this.callerId = call.caller_id || call.callerId || 'Unknown';

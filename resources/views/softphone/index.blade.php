@@ -346,6 +346,9 @@
                 // Listen for logout from main window
                 this.listenForLogout();
                 
+                // Listen for answer/decline commands from main window
+                this.listenForCallCommands();
+                
                 // Check and request permissions
                 await this.checkMicPermission();
                 
@@ -358,6 +361,24 @@
                 window.addEventListener('beforeunload', () => {
                     localStorage.removeItem('mini-pbx-phone-heartbeat');
                 });
+            },
+            
+            listenForCallCommands() {
+                // Listen for commands from main window via BroadcastChannel
+                const channel = new BroadcastChannel('webphone_sync');
+                channel.onmessage = (event) => {
+                    if (event.data.type === 'answer_call') {
+                        console.log('Received answer command from main window');
+                        this.answerCall();
+                    } else if (event.data.type === 'decline_call') {
+                        console.log('Received decline command from main window');
+                        this.hangup();
+                    } else if (event.data.type === 'voicemail_call') {
+                        console.log('Received voicemail command from main window');
+                        // Send to voicemail by declining (Asterisk handles voicemail)
+                        this.hangup();
+                    }
+                };
             },
             
             startHeartbeat() {
