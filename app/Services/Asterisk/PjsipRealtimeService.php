@@ -199,27 +199,35 @@ class PjsipRealtimeService
 
         // Build endpoint settings from extension settings
         $settings = $extension->settings ?? [];
+        
+        // Check if WebRTC is enabled (default to true for softphone users)
+        $isWebRtc = $settings['webrtc'] ?? true;
 
         $data = [
             'id' => $extension->extension,
-            'transport' => $settings['transport'] ?? $this->defaultTransport,
+            // Use transport-ws for WebRTC, otherwise use default
+            'transport' => $isWebRtc ? 'transport-ws' : ($settings['transport'] ?? $this->defaultTransport),
             'aors' => $extension->extension,
             'auth' => $extension->extension,
             'context' => $extension->context ?? $this->defaultContext,
             'disallow' => 'all',
-            'allow' => $settings['codecs'] ?? $this->allowedCodecs,
-            'direct_media' => $settings['direct_media'] ?? 'no',
+            // WebRTC needs opus codec
+            'allow' => $isWebRtc ? 'opus,ulaw,alaw,g722' : ($settings['codecs'] ?? $this->allowedCodecs),
+            'direct_media' => 'no', // Must be 'no' for WebRTC
             'force_rport' => 'yes',
             'rewrite_contact' => 'yes',
             'rtp_symmetric' => 'yes',
             'callerid' => $callerId,
             'mailboxes' => $mailbox,
             'voicemail_extension' => $extension->voicemail_enabled ? '*97' : null,
-            'dtmf_mode' => $settings['dtmf_mode'] ?? 'rfc4733',
-            'ice_support' => $settings['webrtc'] ?? false ? 'yes' : 'no',
-            'media_encryption' => $settings['webrtc'] ?? false ? 'dtls' : 'no',
-            'use_avpf' => $settings['webrtc'] ?? false ? 'yes' : 'no',
-            'webrtc' => $settings['webrtc'] ?? false ? 'yes' : 'no',
+            // WebRTC requires specific DTMF mode
+            'dtmf_mode' => $isWebRtc ? 'rfc4733' : ($settings['dtmf_mode'] ?? 'rfc4733'),
+            // WebRTC requirements
+            'ice_support' => $isWebRtc ? 'yes' : 'no',
+            'media_encryption' => $isWebRtc ? 'dtls' : 'no',
+            'media_encryption_optimistic' => $isWebRtc ? 'yes' : 'no',
+            'use_avpf' => $isWebRtc ? 'yes' : 'no',
+            'webrtc' => $isWebRtc ? 'yes' : 'no',
             'language' => $settings['language'] ?? 'en',
             'allow_transfer' => 'yes',
             'allow_subscribe' => 'yes',
@@ -229,6 +237,8 @@ class PjsipRealtimeService
             'trust_id_inbound' => 'no',
             'trust_id_outbound' => 'no',
             'one_touch_recording' => $settings['one_touch_recording'] ?? false ? 'yes' : 'no',
+            // Additional WebRTC settings
+            'media_use_received_transport' => $isWebRtc ? 'yes' : 'no',
         ];
 
         // Handle call groups if set
