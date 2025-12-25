@@ -529,3 +529,107 @@ location /app {
 }
 ```
 
+---
+
+## CDR (Call Detail Records) Configuration
+
+The Mini-PBX application captures CDR records via AMI events. For this to work, Asterisk must be configured to send CDR events.
+
+### 1. Enable CDR in Asterisk
+
+Edit `/etc/asterisk/cdr.conf`:
+
+```ini
+[general]
+enable=yes
+unanswered=yes
+congestion=yes
+endbeforehexten=no
+initiatedseconds=no
+batch=no
+```
+
+### 2. Configure AMI to Include CDR Events
+
+Edit `/etc/asterisk/manager.conf`, ensure your AMI user has `cdr` in the read permissions:
+
+```ini
+[miniPbx]
+secret = your_ami_secret
+read = system,call,log,verbose,command,agent,user,config,cdr,reporting
+write = system,call,log,verbose,command,agent,user,config,originate
+deny = 0.0.0.0/0.0.0.0
+permit = 127.0.0.1/255.255.255.255
+```
+
+**Key:** The `cdr` permission is essential for receiving CDR events.
+
+### 3. Reload Asterisk
+
+```bash
+asterisk -rx "core reload"
+asterisk -rx "cdr reload"
+```
+
+### 4. Verify CDR Events
+
+Test that CDR events are being sent:
+
+```bash
+# In Asterisk CLI
+asterisk -rx "cdr show status"
+
+# Should show:
+# CDR logging: enabled
+# CDR mode: simple
+```
+
+Make a test call and check the AMI listener output:
+
+```bash
+php artisan ami:listen --debug
+```
+
+You should see `CDR` events in the output after each call ends.
+
+### 5. Laravel CDR Test Command
+
+The application includes a command to test CDR functionality:
+
+```bash
+# Show CDR statistics and recent logs
+php artisan cdr:test
+
+# Create a test CDR record
+php artisan cdr:test --create
+```
+
+### Troubleshooting CDR
+
+If call logs aren't appearing:
+
+1. **Check AMI Listener is running:**
+   ```bash
+   php artisan ami:listen --debug
+   ```
+
+2. **Verify CDR events in Asterisk:**
+   ```bash
+   asterisk -rx "cdr show status"
+   ```
+
+3. **Check AMI permissions include `cdr`:**
+   ```bash
+   asterisk -rx "manager show user miniPbx"
+   ```
+
+4. **Test CDR directly:**
+   ```bash
+   php artisan cdr:test --create
+   ```
+
+5. **Check Laravel logs:**
+   ```bash
+   tail -f storage/logs/laravel.log | grep -i cdr
+   ```
+

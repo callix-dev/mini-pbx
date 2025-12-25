@@ -12,6 +12,7 @@ use App\Models\Extension;
 use App\Models\Queue;
 use App\Models\User;
 use App\Services\SettingsService;
+use Carbon\Carbon;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 
@@ -166,6 +167,8 @@ class AmiListener extends Command
             // Dial events for ringing status
             'DialBegin' => $this->handleDial($event),
             'DialEnd' => $this->handleDial($event),
+            // CDR Event - Most reliable for call logging
+            'Cdr' => $this->handleCdr($event),
             default => null,
         };
     }
@@ -289,6 +292,103 @@ class AmiListener extends Command
         }
 
         unset($this->activeCalls[$uniqueId]);
+    }
+
+    /**
+     * Handle CDR event from Asterisk
+     * This is the most reliable way to capture call records
+     * as Asterisk fires this at the end of every call with complete data
+     */
+    private function handleCdr(array $event): void
+    {
+        $uniqueId = $event['UniqueID'] ?? $event['Uniqueid'] ?? null;
+        $linkedId = $event['LinkedID'] ?? $event['Linkedid'] ?? $uniqueId;
+        $source = $event['Source'] ?? '';
+        $destination = $event['Destination'] ?? '';
+        $dcontext = $event['DestinationContext'] ?? $event['Dcontext'] ?? '';
+        $channel = $event['Channel'] ?? '';
+        $destChannel = $event['DestinationChannel'] ?? '';
+        $disposition = $event['Disposition'] ?? 'NO ANSWER';
+        $duration = (int) ($event['Duration'] ?? 0);
+        $billSec = (int) ($event['BillableSeconds'] ?? $event['Billsec'] ?? 0);
+        $startTime = $event['StartTime'] ?? null;
+        $answerTime = $event['AnswerTime'] ?? null;
+        $endTime = $event['EndTime'] ?? null;
+
+        if (!$uniqueId || !$source) {
+            return;
+        }
+
+        if ($this->option('debug')) {
+            $this->info("CDR: {$source} -> {$destination} ({$disposition}, {$duration}s)");
+        }
+
+        // Determine call type
+        $type = 'internal';
+        if (str_contains($dcontext, 'trunk') || str_contains($dcontext, 'external') || str_contains($dcontext, 'pstn')) {
+            $type = str_contains($channel, 'PJSIP/') && !str_contains($channel, 'trunk') ? 'outbound' : 'inbound';
+        } elseif (str_contains($channel, 'PJSIP/') && str_contains($destChannel, 'PJSIP/')) {
+            $type = 'internal';
+        }
+
+        // Map Asterisk disposition to our status
+        $status = match (strtoupper($disposition)) {
+            'ANSWERED' => 'answered',
+            'BUSY' => 'busy',
+            'NO ANSWER', 'NOANSWER' => 'missed',
+            'FAILED', 'CONGESTION' => 'failed',
+            default => 'missed',
+        };
+
+        // Parse start/end times
+        $parsedStartTime = $startTime ? Carbon::parse($startTime) : now()->subSeconds($duration);
+        $parsedAnswerTime = $answerTime && $answerTime !== '' ? Carbon::parse($answerTime) : null;
+        $parsedEndTime = $endTime ? Carbon::parse($endTime) : now();
+
+        // Find extensions
+        $sourceExt = Extension::where('extension', $source)->first();
+        $destExt = Extension::where('extension', $destination)->first();
+
+        try {
+            // Check if CDR already exists (prevent duplicates)
+            $existing = CallLog::where('uniqueid', $uniqueId)->first();
+            if ($existing) {
+                if ($this->option('debug')) {
+                    $this->warn("CDR already exists for {$uniqueId}");
+                }
+                return;
+            }
+
+            CallLog::create([
+                'uniqueid' => $uniqueId,
+                'linkedid' => $linkedId,
+                'type' => $type,
+                'direction' => $type === 'inbound' ? 'inbound' : ($type === 'outbound' ? 'outbound' : 'internal'),
+                'caller_id' => $source,
+                'caller_name' => $sourceExt?->name ?? $source,
+                'callee_id' => $destination,
+                'callee_name' => $destExt?->name ?? $destination,
+                'extension_id' => $sourceExt?->id ?? $destExt?->id,
+                'status' => $status,
+                'start_time' => $parsedStartTime,
+                'answer_time' => $parsedAnswerTime,
+                'end_time' => $parsedEndTime,
+                'duration' => $duration,
+                'billable_duration' => $billSec,
+                'hangup_cause' => $disposition,
+            ]);
+
+            $this->info("CDR Logged: {$source} -> {$destination} ({$status}, {$duration}s)");
+
+        } catch (\Exception $e) {
+            Log::error('Failed to save CDR', [
+                'uniqueid' => $uniqueId,
+                'source' => $source,
+                'destination' => $destination,
+                'error' => $e->getMessage()
+            ]);
+            $this->error("CDR Save Error: " . $e->getMessage());
+        }
     }
 
     private function handleBridge(array $event): void
