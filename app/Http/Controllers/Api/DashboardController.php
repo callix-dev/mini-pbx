@@ -99,26 +99,105 @@ class DashboardController extends Controller
                 ->pluck('via_addr', 'endpoint')
                 ->toArray();
 
-            Extension::chunk(100, function ($extensions) use ($contacts) {
+            // Get active calls from cache
+            $activeCalls = Cache::get('active_calls', []);
+            $extensionsInCall = [];
+            
+            foreach ($activeCalls as $call) {
+                if (isset($call['caller_id'])) {
+                    $extensionsInCall[] = $call['caller_id'];
+                }
+                if (isset($call['destination'])) {
+                    $extensionsInCall[] = $call['destination'];
+                }
+            }
+
+            Extension::chunk(100, function ($extensions) use ($contacts, $extensionsInCall) {
                 foreach ($extensions as $extension) {
                     $isRegistered = isset($contacts[$extension->extension]);
-                    $newStatus = $isRegistered ? 'online' : 'offline';
+                    $isInActiveCall = in_array($extension->extension, $extensionsInCall);
+                    
+                    // Determine the correct status
+                    if ($isInActiveCall) {
+                        $newStatus = 'on_call';
+                    } elseif ($isRegistered) {
+                        $newStatus = 'online';
+                    } else {
+                        $newStatus = 'offline';
+                    }
 
-                    if (!in_array($extension->status, ['on_call', 'ringing'])) {
-                        if ($extension->status !== $newStatus) {
-                            $extension->status = $newStatus;
-                            if ($isRegistered) {
-                                $extension->last_registered_at = now();
-                                $extension->last_registered_ip = $contacts[$extension->extension];
-                            }
-                            $extension->saveQuietly();
+                    // If extension shows on_call but isn't in any active call, reset it
+                    if ($extension->status === 'on_call' && !$isInActiveCall) {
+                        $newStatus = $isRegistered ? 'online' : 'offline';
+                    }
+                    
+                    // If extension shows ringing but isn't in any active call, reset it
+                    if ($extension->status === 'ringing' && !$isInActiveCall) {
+                        $newStatus = $isRegistered ? 'online' : 'offline';
+                    }
+
+                    if ($extension->status !== $newStatus) {
+                        $extension->status = $newStatus;
+                        if ($isRegistered) {
+                            $extension->last_registered_at = now();
+                            $extension->last_registered_ip = $contacts[$extension->extension] ?? null;
                         }
+                        $extension->saveQuietly();
                     }
                 }
             });
         } catch (\Exception $e) {
             \Log::warning('Failed to sync extension status: ' . $e->getMessage());
         }
+    }
+
+    /**
+     * Force reset all stale extension statuses
+     */
+    public function resetStaleStatuses(): JsonResponse
+    {
+        $activeCalls = Cache::get('active_calls', []);
+        $extensionsInCall = [];
+        
+        foreach ($activeCalls as $call) {
+            if (isset($call['caller_id'])) {
+                $extensionsInCall[] = $call['caller_id'];
+            }
+            if (isset($call['destination'])) {
+                $extensionsInCall[] = $call['destination'];
+            }
+        }
+
+        // Get all extensions that show on_call or ringing
+        $staleExtensions = Extension::whereIn('status', ['on_call', 'ringing'])->get();
+        $resetCount = 0;
+
+        foreach ($staleExtensions as $ext) {
+            if (!in_array($ext->extension, $extensionsInCall)) {
+                // Check if registered
+                $isRegistered = DB::table('ps_contacts')
+                    ->where('endpoint', $ext->extension)
+                    ->exists();
+                
+                $ext->status = $isRegistered ? 'online' : 'offline';
+                $ext->saveQuietly();
+                $resetCount++;
+            }
+        }
+
+        // Also clear stale calls from cache (older than 2 hours)
+        $cleanedCalls = collect($activeCalls)->filter(function ($call) {
+            $cachedAt = Carbon::parse($call['cached_at'] ?? now());
+            return $cachedAt->diffInMinutes(now()) < 120;
+        })->toArray();
+        
+        Cache::put('active_calls', $cleanedCalls, now()->addHours(2));
+
+        return response()->json([
+            'success' => true,
+            'reset_count' => $resetCount,
+            'message' => "Reset {$resetCount} stale extension statuses",
+        ]);
     }
 }
 

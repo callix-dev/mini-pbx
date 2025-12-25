@@ -91,5 +91,8 @@ Route::middleware(['web', 'auth'])->prefix('extensions')->group(function () {
 Route::middleware(['web', 'auth'])->prefix('dashboard')->group(function () {
     // Get dashboard stats (active calls, extensions, etc.)
     Route::get('/stats', [DashboardController::class, 'stats']);
+    
+    // Reset stale extension statuses
+    Route::post('/reset-stale', [DashboardController::class, 'resetStaleStatuses']);
 });
 
