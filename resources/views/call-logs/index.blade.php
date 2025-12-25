@@ -116,14 +116,24 @@
                                 @endif
                             </td>
                             <td>
-                                <span class="font-mono text-gray-900 dark:text-white">{{ $call->source }}</span>
+                                <div>
+                                    <span class="font-mono text-gray-900 dark:text-white">{{ $call->caller_id }}</span>
+                                    @if($call->caller_name && $call->caller_name !== $call->caller_id)
+                                        <p class="text-xs text-gray-500 dark:text-gray-400">{{ $call->caller_name }}</p>
+                                    @endif
+                                </div>
                             </td>
                             <td>
-                                <span class="font-mono text-gray-900 dark:text-white">{{ $call->destination }}</span>
+                                <div>
+                                    <span class="font-mono text-gray-900 dark:text-white">{{ $call->callee_id }}</span>
+                                    @if($call->callee_name && $call->callee_name !== $call->callee_id)
+                                        <p class="text-xs text-gray-500 dark:text-gray-400">{{ $call->callee_name }}</p>
+                                    @endif
+                                </div>
                             </td>
                             <td>
-                                @if($call->agent)
-                                    <span class="text-gray-900 dark:text-white">{{ $call->agent->name }}</span>
+                                @if($call->extension)
+                                    <span class="text-gray-900 dark:text-white">{{ $call->extension->name ?? $call->extension->extension }}</span>
                                 @else
                                     <span class="text-gray-400 dark:text-gray-500">-</span>
                                 @endif

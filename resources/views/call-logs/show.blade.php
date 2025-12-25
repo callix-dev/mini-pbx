@@ -114,7 +114,7 @@
             <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
                 <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
                     <h3 class="text-lg font-medium text-gray-900 dark:text-white">Call Notes</h3>
-                    <span class="badge badge-gray">{{ $callLog->notes->count() ?? 0 }} notes</span>
+                    <span class="badge badge-gray">{{ $callLog->callNotes?->count() ?? 0 }} notes</span>
                 </div>
                 <div class="p-6">
                     <!-- Add Note Form -->
@@ -125,9 +125,9 @@
                     </form>
 
                     <!-- Notes List -->
-                    @if($callLog->notes && $callLog->notes->count() > 0)
+                    @if($callLog->callNotes && $callLog->callNotes->count() > 0)
                         <div class="space-y-4">
-                            @foreach($callLog->notes as $note)
+                            @foreach($callLog->callNotes as $note)
                                 <div class="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
                                     <p class="text-sm text-gray-700 dark:text-gray-300">{{ $note->note }}</p>
                                     <div class="mt-2 flex items-center text-xs text-gray-500 dark:text-gray-400">
