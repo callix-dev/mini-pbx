@@ -19,6 +19,103 @@
 
         <!-- Right Side -->
         <div class="flex items-center space-x-3">
+            <!-- Call Control Widget (shows during active calls) -->
+            @if(auth()->user()?->extension)
+            <div x-data="headerCallControl()" x-init="init()" x-cloak x-show="isInCall" 
+                 class="flex items-center space-x-2 px-3 py-1.5 rounded-lg"
+                 :class="{
+                     'bg-yellow-100 dark:bg-yellow-900/30 border border-yellow-300 dark:border-yellow-700': callState === 'ringing',
+                     'bg-blue-100 dark:bg-blue-900/30 border border-blue-300 dark:border-blue-700': callState === 'calling',
+                     'bg-green-100 dark:bg-green-900/30 border border-green-300 dark:border-green-700': callState === 'connected'
+                 }">
+                <!-- Call Type Icon -->
+                <div class="flex items-center">
+                    <template x-if="callDirection === 'inbound'">
+                        <svg class="w-4 h-4 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/>
+                        </svg>
+                    </template>
+                    <template x-if="callDirection === 'outbound'">
+                        <svg class="w-4 h-4 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/>
+                        </svg>
+                    </template>
+                </div>
+                
+                <!-- Caller Info -->
+                <div class="flex flex-col leading-tight">
+                    <span class="text-xs font-medium text-gray-900 dark:text-white truncate max-w-[100px]" 
+                          x-text="callerName || callerNumber || 'Unknown'"></span>
+                    <span x-show="callerName && callerNumber" class="text-[10px] text-gray-500 dark:text-gray-400" x-text="callerNumber"></span>
+                </div>
+                
+                <!-- Duration -->
+                <div class="flex items-center px-2 py-0.5 rounded bg-white/50 dark:bg-black/20">
+                    <span class="text-xs font-mono font-semibold" 
+                          :class="{
+                              'text-yellow-700 dark:text-yellow-300': callState === 'ringing',
+                              'text-blue-700 dark:text-blue-300': callState === 'calling',
+                              'text-green-700 dark:text-green-300': callState === 'connected'
+                          }"
+                          x-text="callDuration"></span>
+                </div>
+                
+                <!-- Status Badges -->
+                <div class="flex items-center space-x-1">
+                    <span x-show="isMuted" class="px-1.5 py-0.5 text-[10px] font-medium bg-red-200 dark:bg-red-900/50 text-red-700 dark:text-red-300 rounded">
+                        MUTE
+                    </span>
+                    <span x-show="isOnHold" class="px-1.5 py-0.5 text-[10px] font-medium bg-yellow-200 dark:bg-yellow-900/50 text-yellow-700 dark:text-yellow-300 rounded">
+                        HOLD
+                    </span>
+                </div>
+                
+                <!-- Quick Actions -->
+                <div class="flex items-center space-x-1 ml-1 border-l border-gray-300 dark:border-gray-600 pl-2">
+                    <!-- Mute Toggle -->
+                    <button @click="toggleMute()" 
+                            class="p-1 rounded hover:bg-white/50 dark:hover:bg-black/20 transition-colors"
+                            :class="isMuted ? 'text-red-600 dark:text-red-400' : 'text-gray-600 dark:text-gray-400'"
+                            :title="isMuted ? 'Unmute' : 'Mute'">
+                        <svg x-show="!isMuted" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/>
+                        </svg>
+                        <svg x-show="isMuted" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2"/>
+                        </svg>
+                    </button>
+                    
+                    <!-- Hold Toggle -->
+                    <button @click="toggleHold()" 
+                            class="p-1 rounded hover:bg-white/50 dark:hover:bg-black/20 transition-colors"
+                            :class="isOnHold ? 'text-yellow-600 dark:text-yellow-400' : 'text-gray-600 dark:text-gray-400'"
+                            :title="isOnHold ? 'Resume' : 'Hold'">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
+                    </button>
+                    
+                    <!-- Hangup -->
+                    <button @click="hangup()" 
+                            class="p-1 rounded bg-red-500 hover:bg-red-600 text-white transition-colors"
+                            title="End Call">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 8l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2M5 3a2 2 0 00-2 2v1c0 8.284 6.716 15 15 15h1a2 2 0 002-2v-3.28a1 1 0 00-.684-.948l-4.493-1.498a1 1 0 00-1.21.502l-1.13 2.257a11.042 11.042 0 01-5.516-5.517l2.257-1.128a1 1 0 00.502-1.21L9.228 3.683A1 1 0 008.279 3H5z"/>
+                        </svg>
+                    </button>
+                    
+                    <!-- Open Webphone -->
+                    <button @click="openWebphone()" 
+                            class="p-1 rounded hover:bg-white/50 dark:hover:bg-black/20 text-gray-600 dark:text-gray-400 transition-colors"
+                            title="Open Webphone">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+            @endif
+            
             <!-- Search -->
             <div class="hidden md:block relative">
                 <input type="text" 
@@ -165,6 +262,106 @@
 
 @auth
 <script>
+function headerCallControl() {
+    return {
+        callState: 'idle',
+        callerNumber: '',
+        callerName: '',
+        callDuration: '00:00',
+        callDirection: '',
+        isMuted: false,
+        isOnHold: false,
+        channel: null,
+        
+        get isInCall() {
+            return ['ringing', 'calling', 'connected'].includes(this.callState);
+        },
+        
+        init() {
+            // Listen for state updates from webphone via BroadcastChannel
+            this.channel = new BroadcastChannel('mini-pbx-phone');
+            this.channel.onmessage = (event) => {
+                if (event.data.type === 'state_update' && event.data.state) {
+                    this.updateState(event.data.state);
+                }
+            };
+            
+            // Also check localStorage for initial state
+            const stored = localStorage.getItem('mini-pbx-phone-state');
+            if (stored) {
+                try {
+                    const data = JSON.parse(stored);
+                    if (data.state && Date.now() - data.timestamp < 30000) {
+                        this.updateState(data.state);
+                    }
+                } catch (e) {}
+            }
+            
+            // Listen via webphone_sync channel too
+            const syncChannel = new BroadcastChannel('webphone_sync');
+            syncChannel.onmessage = (event) => {
+                if (event.data.type === 'statechange' && event.data.state) {
+                    // Handle partial state updates
+                    if (event.data.state.callState !== undefined) this.callState = event.data.state.callState;
+                    if (event.data.state.callerNumber !== undefined) this.callerNumber = event.data.state.callerNumber;
+                    if (event.data.state.callerName !== undefined) this.callerName = event.data.state.callerName;
+                    if (event.data.state.callDuration !== undefined) this.callDuration = event.data.state.callDuration;
+                    if (event.data.state.callDirection !== undefined) this.callDirection = event.data.state.callDirection;
+                    if (event.data.state.isMuted !== undefined) this.isMuted = event.data.state.isMuted;
+                    if (event.data.state.isOnHold !== undefined) this.isOnHold = event.data.state.isOnHold;
+                }
+            };
+        },
+        
+        updateState(state) {
+            this.callState = state.callState || 'idle';
+            this.callerNumber = state.callerNumber || '';
+            this.callerName = state.callerName || '';
+            this.callDuration = state.callDuration || '00:00';
+            this.callDirection = state.callDirection || '';
+            this.isMuted = state.isMuted || false;
+            this.isOnHold = state.isOnHold || false;
+        },
+        
+        sendCommand(type) {
+            // Send command to webphone popup
+            const channel = new BroadcastChannel('webphone_sync');
+            channel.postMessage({ type: type });
+            channel.close();
+            
+            // Also via localStorage
+            localStorage.setItem('mini-pbx-phone-command', JSON.stringify({
+                type: type,
+                timestamp: Date.now()
+            }));
+        },
+        
+        toggleMute() {
+            this.sendCommand('toggle_mute');
+        },
+        
+        toggleHold() {
+            this.sendCommand('toggle_hold');
+        },
+        
+        hangup() {
+            this.sendCommand('hangup');
+        },
+        
+        openWebphone() {
+            const width = 360;
+            const height = 640;
+            const left = window.screen.width - width - 50;
+            const top = (window.screen.height - height) / 2;
+            
+            window.open(
+                '',
+                'mini-pbx-softphone'
+            )?.focus();
+        }
+    }
+}
+
 function agentStatus(initialStatus) {
     return {
         open: false,

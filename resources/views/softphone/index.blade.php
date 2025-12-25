@@ -403,6 +403,18 @@
                         console.log('Sending to voicemail from command');
                         this.hangUp();
                         break;
+                    case 'toggle_mute':
+                        console.log('Toggling mute from header');
+                        this.toggleMute();
+                        break;
+                    case 'toggle_hold':
+                        console.log('Toggling hold from header');
+                        this.toggleHold();
+                        break;
+                    case 'hangup':
+                        console.log('Hanging up from header');
+                        this.hangUp();
+                        break;
                 }
             },
             
