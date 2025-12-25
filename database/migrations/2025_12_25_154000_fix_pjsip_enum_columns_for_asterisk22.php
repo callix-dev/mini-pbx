@@ -18,13 +18,25 @@ return new class extends Migration
      */
     public function up(): void
     {
-        // For PostgreSQL, we need to drop and recreate columns
-        // because ALTER COLUMN TYPE doesn't work well with enums
+        // For PostgreSQL, we need to drop CHECK constraints first
+        // because Laravel's enum creates CHECK constraints
         
-        // Fix ps_contacts columns
-        Schema::table('ps_contacts', function (Blueprint $table) {
-            // Drop the enum columns and recreate as varchar
-        });
+        // Drop all CHECK constraints on ps_* tables
+        DB::statement("
+            DO \$\$
+            DECLARE
+                r RECORD;
+            BEGIN
+                FOR r IN (
+                    SELECT conname, conrelid::regclass as tablename
+                    FROM pg_constraint
+                    WHERE contype = 'c'
+                    AND conrelid::regclass::text LIKE 'ps_%'
+                ) LOOP
+                    EXECUTE format('ALTER TABLE %s DROP CONSTRAINT IF EXISTS %I', r.tablename, r.conname);
+                END LOOP;
+            END \$\$;
+        ");
 
         // Use raw SQL for PostgreSQL compatibility
         DB::statement('ALTER TABLE ps_contacts ALTER COLUMN qualify_2xx_only TYPE VARCHAR(10)');
