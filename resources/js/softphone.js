@@ -316,18 +316,44 @@ class Softphone {
             const number = remoteIdentity?.uri?.user || 'Unknown';
             const name = remoteIdentity?.displayName || number;
             
-            this.dispatchEvent('statechange', {
+            const callData = {
                 state: 'ringing',
                 callState: 'ringing',
                 number: number,
                 callerNumber: number,
+                callerId: number,
                 name: name,
                 callerName: name,
                 callDirection: 'inbound',
-            });
+                type: 'inbound',
+            };
+            
+            this.dispatchEvent('statechange', callData);
+            
+            // Broadcast incoming call to main window for popup
+            this.broadcastIncomingCall(callData);
             
             this.playRingtone();
             this.showNotification(number, name);
+        }
+    }
+
+    broadcastIncomingCall(call) {
+        // Broadcast via BroadcastChannel to main window
+        try {
+            const channel = new BroadcastChannel('webphone_sync');
+            channel.postMessage({ 
+                type: 'incoming_call', 
+                call: {
+                    caller_id: call.callerNumber || call.callerId,
+                    caller_name: call.callerName || call.name,
+                    type: call.type || 'inbound',
+                    timestamp: Date.now()
+                }
+            });
+            channel.close();
+        } catch (e) {
+            console.warn('Failed to broadcast incoming call:', e);
         }
     }
 

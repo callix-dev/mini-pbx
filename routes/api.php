@@ -21,6 +21,21 @@ Route::middleware('auth:web')->get('/user', function (Request $request) {
     return $request->user();
 });
 
+Route::middleware(['web', 'auth'])->prefix('user')->group(function () {
+    // Get current user status
+    Route::get('/status', function (Request $request) {
+        $user = $request->user();
+        return response()->json([
+            'success' => true,
+            'status' => $user->agent_status ?? 'offline',
+            'extension' => $user->extension ? [
+                'extension' => $user->extension->extension,
+                'status' => $user->extension->status,
+            ] : null,
+        ]);
+    });
+});
+
 /*
 |--------------------------------------------------------------------------
 | WebPhone API Routes

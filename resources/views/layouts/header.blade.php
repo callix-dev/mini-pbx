@@ -32,21 +32,23 @@
             <!-- Agent Status Indicator -->
             @auth
             @php $defaultStatus = auth()->user()->agent_status ?? 'offline'; @endphp
-            <div x-data="{ open: false, status: '{{ $defaultStatus }}' }" class="relative">
+            <div x-data="agentStatus('{{ $defaultStatus }}')" x-init="init()" class="relative">
                 <button @click="open = !open" class="flex items-center space-x-2 p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
                     <span class="relative flex h-3 w-3">
-                        <span class="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 bg-{{ $defaultStatus === 'available' ? 'green' : ($defaultStatus === 'on_break' ? 'yellow' : ($defaultStatus === 'on_call' ? 'red' : 'gray')) }}-400"
+                        <span class="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75"
                               :class="{
                                   'bg-green-400': status === 'available',
-                                  'bg-yellow-400': status === 'on_break',
+                                  'bg-yellow-400': status === 'on_break' || status === 'not_ready',
                                   'bg-red-400': status === 'on_call',
+                                  'bg-orange-400': status === 'ringing',
                                   'bg-gray-400': status === 'offline'
                               }"></span>
-                        <span class="relative inline-flex rounded-full h-3 w-3 bg-{{ $defaultStatus === 'available' ? 'green' : ($defaultStatus === 'on_break' ? 'yellow' : ($defaultStatus === 'on_call' ? 'red' : 'gray')) }}-500"
+                        <span class="relative inline-flex rounded-full h-3 w-3"
                               :class="{
                                   'bg-green-500': status === 'available',
-                                  'bg-yellow-500': status === 'on_break',
+                                  'bg-yellow-500': status === 'on_break' || status === 'not_ready',
                                   'bg-red-500': status === 'on_call',
+                                  'bg-orange-500': status === 'ringing',
                                   'bg-gray-500': status === 'offline'
                               }"></span>
                     </span>
@@ -65,15 +67,19 @@
                      x-transition:leave-start="transform opacity-100 scale-100"
                      x-transition:leave-end="transform opacity-0 scale-95"
                      class="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-1 z-50">
-                    <button @click="status = 'available'; open = false" class="w-full flex items-center px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
+                    <button @click="setStatus('available')" class="w-full flex items-center px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
                         <span class="w-3 h-3 rounded-full bg-green-500 mr-3"></span>
                         Available
                     </button>
-                    <button @click="status = 'on_break'; open = false" class="w-full flex items-center px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
+                    <button @click="setStatus('on_break')" class="w-full flex items-center px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
                         <span class="w-3 h-3 rounded-full bg-yellow-500 mr-3"></span>
                         On Break
                     </button>
-                    <button @click="status = 'offline'; open = false" class="w-full flex items-center px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
+                    <button @click="setStatus('not_ready')" class="w-full flex items-center px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
+                        <span class="w-3 h-3 rounded-full bg-yellow-500 mr-3"></span>
+                        Not Ready
+                    </button>
+                    <button @click="setStatus('offline')" class="w-full flex items-center px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
                         <span class="w-3 h-3 rounded-full bg-gray-500 mr-3"></span>
                         Offline
                     </button>
@@ -156,4 +162,94 @@
         </div>
     </div>
 </header>
+
+@auth
+<script>
+function agentStatus(initialStatus) {
+    return {
+        open: false,
+        status: initialStatus,
+        pollInterval: null,
+
+        init() {
+            // Poll status every 5 seconds
+            this.pollStatus();
+            this.pollInterval = setInterval(() => this.pollStatus(), 5000);
+            
+            // Listen for incoming calls
+            this.listenForCalls();
+        },
+
+        async pollStatus() {
+            try {
+                const response = await fetch('/api/user/status');
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.success && data.status !== this.status) {
+                        this.status = data.status;
+                    }
+                }
+            } catch (e) {
+                // Silent fail
+            }
+        },
+
+        async setStatus(newStatus) {
+            this.open = false;
+            const prevStatus = this.status;
+            this.status = newStatus;
+
+            try {
+                const response = await fetch('/api/webphone/status', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content
+                    },
+                    body: JSON.stringify({ status: newStatus })
+                });
+
+                if (!response.ok) {
+                    this.status = prevStatus; // Revert on error
+                }
+            } catch (e) {
+                this.status = prevStatus;
+            }
+        },
+
+        listenForCalls() {
+            // Listen for incoming call events from Echo/Reverb
+            if (window.Echo) {
+                window.Echo.private('user.{{ auth()->id() }}')
+                    .listen('IncomingCall', (e) => {
+                        this.showIncomingCallPopup(e.call);
+                    });
+            }
+
+            // Also listen for BroadcastChannel messages from webphone
+            const channel = new BroadcastChannel('webphone_sync');
+            channel.onmessage = (event) => {
+                if (event.data.type === 'incoming_call') {
+                    this.showIncomingCallPopup(event.data.call);
+                }
+                if (event.data.type === 'statechange' && event.data.state) {
+                    if (event.data.state.isInCall) {
+                        this.status = 'on_call';
+                    } else if (event.data.state.isRegistered) {
+                        // Only update if we're currently showing on_call
+                        if (this.status === 'on_call') {
+                            this.status = 'available';
+                        }
+                    }
+                }
+            };
+        },
+
+        showIncomingCallPopup(call) {
+            window.dispatchEvent(new CustomEvent('incoming-call', { detail: call }));
+        }
+    }
+}
+</script>
+@endauth
 

@@ -271,6 +271,7 @@
         <!-- WebRTC Softphone Panel -->
         @auth
             @include('components.softphone')
+            @include('components.incoming-call-popup')
         @endauth
 
         @stack('scripts')
