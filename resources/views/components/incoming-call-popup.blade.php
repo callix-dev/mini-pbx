@@ -205,33 +205,44 @@ function incomingCallPopup() {
             } catch (e) {}
         },
 
+        sendCommand(type) {
+            // Send via BroadcastChannel
+            try {
+                const channel = new BroadcastChannel('webphone_sync');
+                channel.postMessage({ type: type, call: this.callData });
+                channel.close();
+                console.log('Sent command via BroadcastChannel:', type);
+            } catch (e) {
+                console.warn('BroadcastChannel failed:', e);
+            }
+            
+            // Also send via localStorage as fallback
+            localStorage.setItem('mini-pbx-phone-command', JSON.stringify({
+                type: type,
+                call: this.callData,
+                timestamp: Date.now()
+            }));
+            
+            // Focus on webphone popup
+            try {
+                const popup = window.open('', 'mini-pbx-softphone');
+                if (popup) popup.focus();
+            } catch (e) {}
+        },
+        
         answerCall() {
             this.closePopup();
-            // Notify the webphone to answer
-            const channel = new BroadcastChannel('webphone_sync');
-            channel.postMessage({ type: 'answer_call', call: this.callData });
-            channel.close();
-            
-            // Focus on webphone popup if open
-            if (window.phoneSync && window.phoneSync.popupWindow) {
-                window.phoneSync.popupWindow.focus();
-            }
+            this.sendCommand('answer_call');
         },
 
         declineCall() {
             this.closePopup();
-            // Notify the webphone to decline
-            const channel = new BroadcastChannel('webphone_sync');
-            channel.postMessage({ type: 'decline_call', call: this.callData });
-            channel.close();
+            this.sendCommand('decline_call');
         },
 
         sendToVoicemail() {
             this.closePopup();
-            // Notify the webphone to send to voicemail
-            const channel = new BroadcastChannel('webphone_sync');
-            channel.postMessage({ type: 'voicemail_call', call: this.callData });
-            channel.close();
+            this.sendCommand('voicemail_call');
         },
 
         closePopup() {

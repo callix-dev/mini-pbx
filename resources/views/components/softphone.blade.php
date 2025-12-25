@@ -240,11 +240,15 @@ function softphoneStatus() {
         },
         
         openSoftphone() {
-            // If window exists and is open, focus it
+            // If we still have the reference and window is open, just focus
             if (this.phoneWindow && !this.phoneWindow.closed) {
                 this.phoneWindow.focus();
                 return;
             }
+            
+            // Check if window is already open via heartbeat (after page navigation)
+            const heartbeat = localStorage.getItem('mini-pbx-phone-heartbeat');
+            const isAlreadyOpen = heartbeat && (Date.now() - parseInt(heartbeat, 10)) < 3000;
             
             // Calculate position
             const width = 360;
@@ -252,19 +256,29 @@ function softphoneStatus() {
             const left = window.screen.width - width - 50;
             const top = (window.screen.height - height) / 2;
             
-            // Open popup
-            this.phoneWindow = window.open(
-                '{{ route("softphone") }}',
-                'mini-pbx-softphone',
-                `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=no,status=no,menubar=no,toolbar=no,location=no`
-            );
+            if (isAlreadyOpen) {
+                // Window exists, use empty URL to just focus without reload
+                this.phoneWindow = window.open(
+                    '',  // Empty URL - focuses existing window without reload
+                    'mini-pbx-softphone'
+                );
+            } else {
+                // Open new popup
+                this.phoneWindow = window.open(
+                    '{{ route("softphone") }}',
+                    'mini-pbx-softphone',
+                    `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=no,status=no,menubar=no,toolbar=no,location=no`
+                );
+            }
             
             if (this.phoneWindow) {
+                this.phoneWindow.focus();
                 this.isWindowOpen = true;
                 
                 // Check periodically if window is still open
+                if (this.checkInterval) clearInterval(this.checkInterval);
                 this.checkInterval = setInterval(() => {
-                    if (this.phoneWindow.closed) {
+                    if (this.phoneWindow && this.phoneWindow.closed) {
                         this.isWindowOpen = false;
                         clearInterval(this.checkInterval);
                         this.phoneWindow = null;

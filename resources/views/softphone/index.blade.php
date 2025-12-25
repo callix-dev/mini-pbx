@@ -363,22 +363,47 @@
                 });
             },
             
+            commandChannel: null,
+            
             listenForCallCommands() {
                 // Listen for commands from main window via BroadcastChannel
-                const channel = new BroadcastChannel('webphone_sync');
-                channel.onmessage = (event) => {
-                    if (event.data.type === 'answer_call') {
-                        console.log('Received answer command from main window');
-                        this.answerCall();
-                    } else if (event.data.type === 'decline_call') {
-                        console.log('Received decline command from main window');
-                        this.hangup();
-                    } else if (event.data.type === 'voicemail_call') {
-                        console.log('Received voicemail command from main window');
-                        // Send to voicemail by declining (Asterisk handles voicemail)
-                        this.hangup();
-                    }
+                // Keep reference to prevent garbage collection
+                this.commandChannel = new BroadcastChannel('webphone_sync');
+                this.commandChannel.onmessage = (event) => {
+                    console.log('Softphone received command:', event.data);
+                    this.handleCommand(event.data.type);
                 };
+                console.log('Softphone: Command channel initialized');
+                
+                // Also listen via localStorage as fallback
+                window.addEventListener('storage', (event) => {
+                    if (event.key === 'mini-pbx-phone-command') {
+                        try {
+                            const data = JSON.parse(event.newValue);
+                            console.log('Softphone received localStorage command:', data);
+                            this.handleCommand(data.type);
+                            // Clear the command
+                            localStorage.removeItem('mini-pbx-phone-command');
+                        } catch (e) {}
+                    }
+                });
+            },
+            
+            handleCommand(type) {
+                switch (type) {
+                    case 'answer_call':
+                        console.log('Answering call from command');
+                        this.answerCall();
+                        break;
+                    case 'decline_call':
+                        console.log('Declining call from command');
+                        this.hangUp();
+                        break;
+                    case 'voicemail_call':
+                        console.log('Sending to voicemail from command');
+                        this.hangUp();
+                        break;
+                }
             },
             
             startHeartbeat() {
