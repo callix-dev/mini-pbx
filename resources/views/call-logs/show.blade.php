@@ -372,7 +372,7 @@
                 window.phoneSync.initiateCall(phoneNumber);
             } else {
                 // Open softphone with the number to dial
-                const popupUrl = '{{ route("softphone.index") }}?dial=' + encodeURIComponent(phoneNumber);
+                const popupUrl = '{{ route("softphone") }}?dial=' + encodeURIComponent(phoneNumber);
                 const popup = window.open(popupUrl, 'softphone', 'width=400,height=600,resizable=yes,scrollbars=yes');
                 
                 if (popup) {
