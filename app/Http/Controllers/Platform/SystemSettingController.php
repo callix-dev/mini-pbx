@@ -16,72 +16,73 @@ class SystemSettingController extends Controller
 {
     public function index(): View
     {
-        $settings = [
-            'ami' => SystemSetting::getGroup('ami'),
-            'ari' => SystemSetting::getGroup('ari'),
-            'general' => SystemSetting::getGroup('general'),
-            'webrtc' => SystemSetting::getGroup('webrtc'),
-            'email' => SystemSetting::getGroup('email'),
-            'retention' => SystemSetting::getGroup('retention'),
-        ];
+        // Get all settings as a flat array for the view
+        $settings = SystemSetting::all()->pluck('value', 'key')->toArray();
 
-        $timezones = \DateTimeZone::listIdentifiers();
-
-        return view('platform.system-settings.index', compact('settings', 'timezones'));
+        return view('platform.system-settings.index', compact('settings'));
     }
 
     public function update(Request $request): RedirectResponse
     {
         $validated = $request->validate([
             // AMI Settings
-            'ami.host' => 'nullable|string|max:255',
-            'ami.port' => 'nullable|integer|min:1|max:65535',
-            'ami.username' => 'nullable|string|max:255',
-            'ami.password' => 'nullable|string|max:255',
-            'ami.enabled' => 'nullable|boolean',
+            'ami_host' => 'nullable|string|max:255',
+            'ami_port' => 'nullable|integer|min:1|max:65535',
+            'ami_username' => 'nullable|string|max:255',
+            'ami_secret' => 'nullable|string|max:255',
 
             // ARI Settings
-            'ari.host' => 'nullable|string|max:255',
-            'ari.port' => 'nullable|integer|min:1|max:65535',
-            'ari.username' => 'nullable|string|max:255',
-            'ari.password' => 'nullable|string|max:255',
-            'ari.enabled' => 'nullable|boolean',
-
-            // General Settings
-            'general.timezone' => 'nullable|string|max:50',
-            'general.asterisk_config_path' => 'nullable|string|max:255',
-            'general.asterisk_sounds_path' => 'nullable|string|max:255',
-            'general.asterisk_recording_path' => 'nullable|string|max:255',
+            'ari_url' => 'nullable|string|max:255',
+            'ari_app' => 'nullable|string|max:255',
+            'ari_username' => 'nullable|string|max:255',
+            'ari_password' => 'nullable|string|max:255',
 
             // WebRTC Settings
-            'webrtc.stun_server' => 'nullable|string|max:255',
-            'webrtc.turn_server' => 'nullable|string|max:255',
-            'webrtc.turn_username' => 'nullable|string|max:255',
-            'webrtc.turn_password' => 'nullable|string|max:255',
+            'stun_server' => 'nullable|string|max:255',
+            'turn_server' => 'nullable|string|max:255',
+            'turn_username' => 'nullable|string|max:255',
+            'turn_credential' => 'nullable|string|max:255',
+
+            // General Settings
+            'timezone' => 'nullable|string|max:100',
+            'session_timeout' => 'nullable|integer|min:5|max:1440',
+            'data_retention_days' => 'nullable|integer|min:1|max:3650',
+            'recording_retention_days' => 'nullable|integer|min:1|max:3650',
 
             // Email Settings
-            'email.host' => 'nullable|string|max:255',
-            'email.port' => 'nullable|integer|min:1|max:65535',
-            'email.username' => 'nullable|string|max:255',
-            'email.password' => 'nullable|string|max:255',
-            'email.encryption' => 'nullable|in:tls,ssl,null',
-            'email.from_address' => 'nullable|email',
-            'email.from_name' => 'nullable|string|max:255',
-
-            // Retention Settings
-            'retention.enabled' => 'nullable|boolean',
-            'retention.days' => 'nullable|integer|min:1|max:3650',
+            'smtp_host' => 'nullable|string|max:255',
+            'smtp_port' => 'nullable|integer|min:1|max:65535',
+            'smtp_username' => 'nullable|string|max:255',
+            'smtp_password' => 'nullable|string|max:255',
+            'smtp_encryption' => 'nullable|in:tls,ssl,none',
+            'mail_from_address' => 'nullable|email|max:255',
+            'mail_from_name' => 'nullable|string|max:255',
         ]);
 
-        foreach ($validated as $group => $settings) {
-            if (is_array($settings)) {
-                foreach ($settings as $key => $value) {
-                    $isEncrypted = in_array($key, ['password']);
-                    $type = is_bool($value) ? 'boolean' : (is_int($value) ? 'integer' : 'string');
+        // Define which fields are encrypted (passwords/secrets)
+        $encryptedFields = ['ami_secret', 'ari_password', 'turn_credential', 'smtp_password'];
+        
+        // Define field groups for organization
+        $fieldGroups = [
+            'ami_host' => 'ami', 'ami_port' => 'ami', 'ami_username' => 'ami', 'ami_secret' => 'ami',
+            'ari_url' => 'ari', 'ari_app' => 'ari', 'ari_username' => 'ari', 'ari_password' => 'ari',
+            'stun_server' => 'webrtc', 'turn_server' => 'webrtc', 'turn_username' => 'webrtc', 'turn_credential' => 'webrtc',
+            'timezone' => 'general', 'session_timeout' => 'general', 'data_retention_days' => 'general', 'recording_retention_days' => 'general',
+            'smtp_host' => 'email', 'smtp_port' => 'email', 'smtp_username' => 'email', 'smtp_password' => 'email',
+            'smtp_encryption' => 'email', 'mail_from_address' => 'email', 'mail_from_name' => 'email',
+        ];
 
-                    SystemSetting::set($key, $value, $group, $type, $isEncrypted);
-                }
+        foreach ($validated as $key => $value) {
+            // Skip empty password fields (don't overwrite with empty)
+            if (in_array($key, $encryptedFields) && empty($value)) {
+                continue;
             }
+
+            $group = $fieldGroups[$key] ?? 'general';
+            $isEncrypted = in_array($key, $encryptedFields);
+            $type = is_int($value) ? 'integer' : 'string';
+
+            SystemSetting::set($key, $value, $group, $type, $isEncrypted);
         }
 
         AuditLog::log('settings_changed', null, null, null, 'System settings updated');
