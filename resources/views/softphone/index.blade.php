@@ -361,6 +361,33 @@
                 window.addEventListener('beforeunload', () => {
                     localStorage.removeItem('mini-pbx-phone-heartbeat');
                 });
+                
+                // Check for dial parameter in URL
+                const urlParams = new URLSearchParams(window.location.search);
+                const dialNumber = urlParams.get('dial');
+                if (dialNumber) {
+                    this.dialNumber = dialNumber;
+                    // Clear the URL parameter without refreshing
+                    window.history.replaceState({}, document.title, window.location.pathname);
+                    
+                    // Auto-dial when registered (wait for registration if needed)
+                    if (this.isRegistered && this.micPermission === 'granted') {
+                        setTimeout(() => this.makeCall(), 500);
+                    } else {
+                        // Wait for registration and mic permission
+                        const checkAndDial = setInterval(() => {
+                            if (this.isRegistered && this.micPermission === 'granted') {
+                                clearInterval(checkAndDial);
+                                this.makeCall();
+                            }
+                        }, 1000);
+                        // Stop checking after 30 seconds
+                        setTimeout(() => clearInterval(checkAndDial), 30000);
+                    }
+                }
+                
+                // Listen for initiate_call commands from main window
+                this.listenForDialCommands();
             },
             
             commandChannel: null,
@@ -416,6 +443,31 @@
                         this.hangUp();
                         break;
                 }
+            },
+            
+            listenForDialCommands() {
+                // Listen for dial commands via localStorage
+                window.addEventListener('storage', (event) => {
+                    if (event.key === 'mini-pbx-phone-dial') {
+                        try {
+                            const data = JSON.parse(event.newValue);
+                            if (data.type === 'initiate_call' && data.phoneNumber) {
+                                console.log('Received dial command for:', data.phoneNumber);
+                                this.dialNumber = data.phoneNumber;
+                                
+                                // Auto-dial if ready
+                                if (this.isRegistered && this.micPermission === 'granted' && !this.isInCall) {
+                                    setTimeout(() => this.makeCall(), 500);
+                                }
+                                
+                                // Clear the dial command
+                                localStorage.removeItem('mini-pbx-phone-dial');
+                            }
+                        } catch (e) {
+                            console.error('Error parsing dial command:', e);
+                        }
+                    }
+                });
             },
             
             startHeartbeat() {

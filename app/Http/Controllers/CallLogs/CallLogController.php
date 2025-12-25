@@ -69,8 +69,9 @@ class CallLogController extends Controller
     public function show(CallLog $callLog): View
     {
         $callLog->load(['extension', 'queue', 'carrier', 'disposition', 'callNotes.user']);
+        $dispositions = Disposition::where('is_active', true)->orderBy('sort_order')->get();
 
-        return view('call-logs.show', compact('callLog'));
+        return view('call-logs.show', compact('callLog', 'dispositions'));
     }
 
     public function addNote(Request $request, CallLog $callLog): RedirectResponse

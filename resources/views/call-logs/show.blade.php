@@ -167,23 +167,46 @@
         <div class="space-y-6">
             <!-- Disposition -->
             <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
-                <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+                <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
                     <h3 class="text-lg font-medium text-gray-900 dark:text-white">Disposition</h3>
+                    @if($callLog->disposition)
+                        <span class="badge badge-primary">{{ $callLog->disposition->name }}</span>
+                    @else
+                        <span class="badge badge-warning">Not Set</span>
+                    @endif
                 </div>
                 <div class="p-6">
                     <form action="{{ route('call-logs.update-disposition', $callLog) }}" method="POST">
                         @csrf
                         @method('PATCH')
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                            Select Disposition
+                        </label>
                         <select name="disposition_id" class="form-select mb-3">
                             <option value="">-- Select Disposition --</option>
-                            @foreach($dispositions ?? [] as $disposition)
+                            @forelse($dispositions ?? [] as $disposition)
                                 <option value="{{ $disposition->id }}" {{ $callLog->disposition_id == $disposition->id ? 'selected' : '' }}>
                                     {{ $disposition->name }}
                                 </option>
-                            @endforeach
+                            @empty
+                                <option disabled>No dispositions available</option>
+                            @endforelse
                         </select>
-                        <button type="submit" class="btn-secondary w-full">Update</button>
+                        <button type="submit" class="btn-primary w-full">
+                            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                            </svg>
+                            Update Disposition
+                        </button>
                     </form>
+                    
+                    @if(count($dispositions ?? []) == 0)
+                        <p class="mt-3 text-xs text-gray-500 dark:text-gray-400 text-center">
+                            <a href="{{ route('dispositions.index') }}" class="text-primary-600 hover:underline">
+                                Create dispositions
+                            </a> to categorize calls.
+                        </p>
+                    @endif
                 </div>
             </div>
 
@@ -241,21 +264,139 @@
                     <h3 class="text-lg font-medium text-gray-900 dark:text-white">Actions</h3>
                 </div>
                 <div class="p-4 space-y-2">
-                    <button type="button" class="w-full btn-secondary text-left">
+                    <!-- Call Back Now (via WebPhone) -->
+                    <button 
+                        type="button" 
+                        onclick="initiateCallback('{{ $callLog->caller_id }}')"
+                        class="w-full btn-primary text-left flex items-center">
                         <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/>
                         </svg>
-                        Call Back
+                        Call Back Now
                     </button>
-                    <a href="{{ route('callbacks.store') }}?phone={{ $callLog->source }}" class="w-full btn-secondary text-left flex items-center">
+                    
+                    <!-- Schedule Callback -->
+                    <button 
+                        type="button" 
+                        onclick="openScheduleCallbackModal()"
+                        class="w-full btn-secondary text-left flex items-center">
                         <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
                         </svg>
                         Schedule Callback
-                    </a>
+                    </button>
                 </div>
             </div>
         </div>
     </div>
-</x-app-layout>
 
+    <!-- Schedule Callback Modal -->
+    <div id="scheduleCallbackModal" class="fixed inset-0 z-50 hidden overflow-y-auto" x-data="{ open: false }">
+        <div class="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0">
+            <div class="fixed inset-0 transition-opacity bg-gray-500 bg-opacity-75 dark:bg-gray-900 dark:bg-opacity-75" onclick="closeScheduleCallbackModal()"></div>
+            
+            <span class="hidden sm:inline-block sm:align-middle sm:h-screen">&#8203;</span>
+            
+            <div class="inline-block overflow-hidden text-left align-bottom transition-all transform bg-white dark:bg-gray-800 rounded-lg shadow-xl sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
+                <form action="{{ route('callbacks.store') }}" method="POST">
+                    @csrf
+                    <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+                        <h3 class="text-lg font-medium text-gray-900 dark:text-white">Schedule Callback</h3>
+                    </div>
+                    
+                    <div class="px-6 py-4 space-y-4">
+                        <input type="hidden" name="call_log_id" value="{{ $callLog->id }}">
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Phone Number</label>
+                            <input type="text" name="phone_number" value="{{ $callLog->caller_id }}" 
+                                   class="form-input" required>
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Caller Name</label>
+                            <input type="text" name="caller_name" value="{{ $callLog->caller_name }}" 
+                                   class="form-input" placeholder="Optional">
+                        </div>
+                        
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Scheduled Date</label>
+                                <input type="date" name="scheduled_date" value="{{ now()->addDay()->format('Y-m-d') }}" 
+                                       class="form-input" required min="{{ now()->format('Y-m-d') }}">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Scheduled Time</label>
+                                <input type="time" name="scheduled_time" value="{{ now()->addHour()->format('H:00') }}" 
+                                       class="form-input" required>
+                            </div>
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Notes</label>
+                            <textarea name="notes" rows="3" class="form-input" 
+                                      placeholder="Add notes about this callback...">From call log #{{ $callLog->id }} - {{ $callLog->created_at->format('M d, Y H:i') }}</textarea>
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Priority</label>
+                            <select name="priority" class="form-select">
+                                <option value="normal">Normal</option>
+                                <option value="high">High</option>
+                                <option value="urgent">Urgent</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="px-6 py-4 bg-gray-50 dark:bg-gray-700/50 flex justify-end space-x-3">
+                        <button type="button" onclick="closeScheduleCallbackModal()" class="btn-secondary">
+                            Cancel
+                        </button>
+                        <button type="submit" class="btn-primary">
+                            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                            </svg>
+                            Schedule Callback
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    @push('scripts')
+    <script>
+        function initiateCallback(phoneNumber) {
+            // Check if webphone popup exists and is open
+            if (window.phoneSync && typeof window.phoneSync.initiateCall === 'function') {
+                window.phoneSync.initiateCall(phoneNumber);
+            } else {
+                // Open softphone with the number to dial
+                const popupUrl = '{{ route("softphone.index") }}?dial=' + encodeURIComponent(phoneNumber);
+                const popup = window.open(popupUrl, 'softphone', 'width=400,height=600,resizable=yes,scrollbars=yes');
+                
+                if (popup) {
+                    popup.focus();
+                } else {
+                    alert('Please allow popups to use the WebPhone, or manually dial: ' + phoneNumber);
+                }
+            }
+        }
+        
+        function openScheduleCallbackModal() {
+            document.getElementById('scheduleCallbackModal').classList.remove('hidden');
+        }
+        
+        function closeScheduleCallbackModal() {
+            document.getElementById('scheduleCallbackModal').classList.add('hidden');
+        }
+        
+        // Close modal on escape key
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                closeScheduleCallbackModal();
+            }
+        });
+    </script>
+    @endpush
+</x-app-layout>

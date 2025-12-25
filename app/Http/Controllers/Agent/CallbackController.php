@@ -33,19 +33,29 @@ class CallbackController extends Controller
     {
         $validated = $request->validate([
             'phone_number' => 'required|string|max:30',
-            'contact_name' => 'nullable|string|max:255',
+            'caller_name' => 'nullable|string|max:255',
             'notes' => 'nullable|string|max:1000',
-            'scheduled_at' => 'required|date|after:now',
+            'scheduled_date' => 'required|date|after_or_equal:today',
+            'scheduled_time' => 'required|date_format:H:i',
+            'priority' => 'nullable|in:normal,high,urgent',
             'call_log_id' => 'nullable|exists:call_logs,id',
         ]);
 
-        $validated['user_id'] = auth()->id();
-        $validated['status'] = 'pending';
-
-        Callback::create($validated);
+        // Combine date and time
+        $scheduledAt = \Carbon\Carbon::parse($validated['scheduled_date'] . ' ' . $validated['scheduled_time']);
+        
+        Callback::create([
+            'user_id' => auth()->id(),
+            'phone_number' => $validated['phone_number'],
+            'contact_name' => $validated['caller_name'] ?? null,
+            'notes' => $validated['notes'] ?? null,
+            'scheduled_at' => $scheduledAt,
+            'call_log_id' => $validated['call_log_id'] ?? null,
+            'status' => 'pending',
+        ]);
 
         return redirect()->back()
-            ->with('success', 'Callback scheduled successfully.');
+            ->with('success', 'Callback scheduled successfully for ' . $scheduledAt->format('M d, Y \a\t h:i A'));
     }
 
     public function complete(Callback $callback): RedirectResponse

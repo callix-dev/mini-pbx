@@ -138,6 +138,33 @@ class PhoneSync {
     }
 
     /**
+     * Initiate a call to a phone number
+     * Opens the softphone popup with the number to dial
+     */
+    initiateCall(phoneNumber) {
+        const message = {
+            type: 'initiate_call',
+            phoneNumber: phoneNumber,
+            timestamp: Date.now(),
+        };
+
+        if (this.channel) {
+            this.channel.postMessage(message);
+        }
+        
+        // Also use localStorage for backup
+        localStorage.setItem('mini-pbx-phone-dial', JSON.stringify(message));
+        
+        // Open or focus the softphone popup
+        const popupUrl = '/softphone?dial=' + encodeURIComponent(phoneNumber);
+        const popup = window.open(popupUrl, 'softphone', 'width=400,height=600,resizable=yes,scrollbars=yes');
+        
+        if (popup) {
+            popup.focus();
+        }
+    }
+
+    /**
      * Broadcast logout event to close phone popup
      */
     broadcastLogout() {
