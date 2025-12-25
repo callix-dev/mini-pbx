@@ -210,7 +210,7 @@ class AmiListener extends Command
             $extension->saveQuietly();
             
             // Broadcast status change
-            broadcast(new ExtensionStatusChanged($extension->id, $extension->extension, 'online', 'on_call'));
+            broadcast(new ExtensionStatusChanged($extension, 'online', 'on_call'));
         }
 
         broadcast(new CallStarted($this->activeCalls[$uniqueId]));
@@ -279,12 +279,12 @@ class AmiListener extends Command
             if ($extension && $extension->status === 'on_call') {
                 $extension->status = 'online';
                 $extension->saveQuietly();
-                broadcast(new ExtensionStatusChanged($extension->id, $extension->extension, 'on_call', 'online'));
+                broadcast(new ExtensionStatusChanged($extension, 'on_call', 'online'));
             }
             if ($calleeExtension && $calleeExtension->status === 'on_call') {
                 $calleeExtension->status = 'online';
                 $calleeExtension->saveQuietly();
-                broadcast(new ExtensionStatusChanged($calleeExtension->id, $calleeExtension->extension, 'on_call', 'online'));
+                broadcast(new ExtensionStatusChanged($calleeExtension, 'on_call', 'online'));
             }
 
         } catch (\Exception $e) {
@@ -417,7 +417,7 @@ class AmiListener extends Command
                         $previousStatus = $extension->status;
                         $extension->status = 'ringing';
                         $extension->saveQuietly();
-                        broadcast(new ExtensionStatusChanged($extension->id, $extension->extension, $previousStatus, 'ringing'));
+                        broadcast(new ExtensionStatusChanged($extension, $previousStatus, 'ringing'));
                     }
                 } elseif ($subEvent === 'End' || $event['Event'] === 'DialEnd') {
                     $dialStatus = $event['DialStatus'] ?? '';
@@ -426,12 +426,12 @@ class AmiListener extends Command
                         // Call answered - set to on_call
                         $extension->status = 'on_call';
                         $extension->saveQuietly();
-                        broadcast(new ExtensionStatusChanged($extension->id, $extension->extension, 'ringing', 'on_call'));
+                        broadcast(new ExtensionStatusChanged($extension, 'ringing', 'on_call'));
                     } else {
                         // Call not answered - reset to online
                         $extension->status = 'online';
                         $extension->saveQuietly();
-                        broadcast(new ExtensionStatusChanged($extension->id, $extension->extension, 'ringing', 'online'));
+                        broadcast(new ExtensionStatusChanged($extension, 'ringing', 'online'));
                     }
                 }
             }
