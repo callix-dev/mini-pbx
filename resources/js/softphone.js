@@ -18,6 +18,10 @@ class Softphone {
         // Audio elements
         this.remoteAudio = null;
         this.ringtoneAudio = null;
+        this.ringbackAudio = null;
+        this.audioContext = null;
+        this.ringtoneOscillator = null;
+        this.ringbackOscillator = null;
         
         // Keep-alive mechanism
         this.keepAliveInterval = null;
@@ -64,7 +68,7 @@ class Softphone {
             this.remoteAudio = document.getElementById('softphone-remote-audio');
         }
         
-        // Ringtone audio element
+        // Ringtone audio element (for incoming calls)
         if (!document.getElementById('softphone-ringtone')) {
             this.ringtoneAudio = document.createElement('audio');
             this.ringtoneAudio.id = 'softphone-ringtone';
@@ -73,6 +77,24 @@ class Softphone {
             document.body.appendChild(this.ringtoneAudio);
         } else {
             this.ringtoneAudio = document.getElementById('softphone-ringtone');
+        }
+        
+        // Ringback audio element (for outgoing calls)
+        if (!document.getElementById('softphone-ringback')) {
+            this.ringbackAudio = document.createElement('audio');
+            this.ringbackAudio.id = 'softphone-ringback';
+            this.ringbackAudio.loop = true;
+            this.ringbackAudio.src = '/storage/audio/ringback.mp3';
+            document.body.appendChild(this.ringbackAudio);
+        } else {
+            this.ringbackAudio = document.getElementById('softphone-ringback');
+        }
+        
+        // Initialize Web Audio API for fallback tones
+        try {
+            this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        } catch (e) {
+            console.warn('Web Audio API not available');
         }
     }
 
@@ -360,6 +382,7 @@ class Softphone {
     handleCallAnswered() {
         console.log('Softphone: Call answered');
         this.stopRingtone();
+        this.stopRingback();
         this.startCallTimer();
         this.dispatchEvent('statechange', { 
             state: 'connected',
@@ -371,6 +394,7 @@ class Softphone {
     handleCallHangup() {
         console.log('Softphone: Call hangup');
         this.stopRingtone();
+        this.stopRingback();
         this.stopCallTimer();
         this.dispatchEvent('statechange', { 
             state: 'idle',
@@ -416,10 +440,14 @@ class Softphone {
                 callDirection: 'outbound',
             });
             
+            // Play ringback tone while waiting for answer
+            this.playRingback();
+            
             await this.simpleUser.call(destination);
             return true;
         } catch (error) {
             console.error('Softphone: Call failed', error);
+            this.stopRingback();
             this.dispatchEvent('statechange', { state: 'idle' });
             this.logEvent('call_failed', { error: error.message });
             return false;
@@ -450,6 +478,7 @@ class Softphone {
         
         try {
             this.stopRingtone();
+            this.stopRingback();
             await this.simpleUser.hangup();
         } catch (error) {
             console.error('Softphone: Hangup failed', error);
@@ -523,8 +552,14 @@ class Softphone {
     }
 
     playRingtone() {
+        // Try HTML5 audio first
         if (this.ringtoneAudio) {
-            this.ringtoneAudio.play().catch(e => console.warn('Ringtone play failed:', e));
+            this.ringtoneAudio.play().catch(e => {
+                console.warn('Ringtone audio file failed, using generated tone:', e);
+                this.playGeneratedRingtone();
+            });
+        } else {
+            this.playGeneratedRingtone();
         }
     }
 
@@ -532,6 +567,134 @@ class Softphone {
         if (this.ringtoneAudio) {
             this.ringtoneAudio.pause();
             this.ringtoneAudio.currentTime = 0;
+        }
+        this.stopGeneratedRingtone();
+    }
+    
+    playRingback() {
+        // Try HTML5 audio first
+        if (this.ringbackAudio) {
+            this.ringbackAudio.play().catch(e => {
+                console.warn('Ringback audio file failed, using generated tone:', e);
+                this.playGeneratedRingback();
+            });
+        } else {
+            this.playGeneratedRingback();
+        }
+    }
+    
+    stopRingback() {
+        if (this.ringbackAudio) {
+            this.ringbackAudio.pause();
+            this.ringbackAudio.currentTime = 0;
+        }
+        this.stopGeneratedRingback();
+    }
+    
+    /**
+     * Generate ringtone using Web Audio API (fallback)
+     * Creates a classic phone ring pattern: two tones alternating
+     */
+    playGeneratedRingtone() {
+        if (!this.audioContext) return;
+        
+        // Resume audio context if suspended
+        if (this.audioContext.state === 'suspended') {
+            this.audioContext.resume();
+        }
+        
+        this.stopGeneratedRingtone();
+        
+        const playRingCycle = () => {
+            if (!this.audioContext || this.ringtoneOscillator === 'stopped') return;
+            
+            // Create oscillators for a dual-tone ring (like classic phone)
+            const osc1 = this.audioContext.createOscillator();
+            const osc2 = this.audioContext.createOscillator();
+            const gainNode = this.audioContext.createGain();
+            
+            osc1.type = 'sine';
+            osc2.type = 'sine';
+            osc1.frequency.setValueAtTime(440, this.audioContext.currentTime); // A4
+            osc2.frequency.setValueAtTime(480, this.audioContext.currentTime); // B4
+            
+            osc1.connect(gainNode);
+            osc2.connect(gainNode);
+            gainNode.connect(this.audioContext.destination);
+            gainNode.gain.setValueAtTime(0.2, this.audioContext.currentTime);
+            
+            osc1.start();
+            osc2.start();
+            
+            // Ring for 1 second, pause for 2 seconds
+            setTimeout(() => {
+                osc1.stop();
+                osc2.stop();
+            }, 1000);
+        };
+        
+        // Play immediately and then repeat
+        playRingCycle();
+        this.ringtoneOscillator = setInterval(playRingCycle, 3000);
+    }
+    
+    stopGeneratedRingtone() {
+        if (this.ringtoneOscillator && this.ringtoneOscillator !== 'stopped') {
+            clearInterval(this.ringtoneOscillator);
+            this.ringtoneOscillator = 'stopped';
+        }
+    }
+    
+    /**
+     * Generate ringback tone using Web Audio API (fallback)
+     * Standard US ringback: 440Hz + 480Hz, 2s on, 4s off
+     */
+    playGeneratedRingback() {
+        if (!this.audioContext) return;
+        
+        // Resume audio context if suspended
+        if (this.audioContext.state === 'suspended') {
+            this.audioContext.resume();
+        }
+        
+        this.stopGeneratedRingback();
+        
+        const playRingbackCycle = () => {
+            if (!this.audioContext || this.ringbackOscillator === 'stopped') return;
+            
+            const osc1 = this.audioContext.createOscillator();
+            const osc2 = this.audioContext.createOscillator();
+            const gainNode = this.audioContext.createGain();
+            
+            osc1.type = 'sine';
+            osc2.type = 'sine';
+            osc1.frequency.setValueAtTime(440, this.audioContext.currentTime);
+            osc2.frequency.setValueAtTime(480, this.audioContext.currentTime);
+            
+            osc1.connect(gainNode);
+            osc2.connect(gainNode);
+            gainNode.connect(this.audioContext.destination);
+            gainNode.gain.setValueAtTime(0.15, this.audioContext.currentTime);
+            
+            osc1.start();
+            osc2.start();
+            
+            // Play for 2 seconds
+            setTimeout(() => {
+                osc1.stop();
+                osc2.stop();
+            }, 2000);
+        };
+        
+        // Play immediately and then repeat every 6 seconds (2s on, 4s off)
+        playRingbackCycle();
+        this.ringbackOscillator = setInterval(playRingbackCycle, 6000);
+    }
+    
+    stopGeneratedRingback() {
+        if (this.ringbackOscillator && this.ringbackOscillator !== 'stopped') {
+            clearInterval(this.ringbackOscillator);
+            this.ringbackOscillator = 'stopped';
         }
     }
 
