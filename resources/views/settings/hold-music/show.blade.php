@@ -63,7 +63,7 @@
                     <h3 class="text-lg font-medium">Upload Audio Files</h3>
                 </div>
                 <div class="card-body">
-                    <form action="{{ route('hold-music.upload-files', $holdMusic ?? 0) }}" method="POST" enctype="multipart/form-data" 
+                    <form action="{{ route('hold-music.upload-file', $holdMusic) }}" method="POST" enctype="multipart/form-data" 
                           id="upload-form" class="space-y-4">
                         @csrf
                         
@@ -104,26 +104,26 @@
                 </div>
                 <div class="card-body p-0">
                     <div class="overflow-x-auto">
-                        <table class="data-table">
-                            <thead>
+                        <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                            <thead class="bg-gray-50 dark:bg-gray-800">
                                 <tr>
-                                    <th class="w-12">#</th>
-                                    <th>File Name</th>
-                                    <th>Duration</th>
-                                    <th>Status</th>
-                                    <th class="text-right">Actions</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider w-16">#</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">File Name</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider w-28">Duration</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider w-24">Status</th>
+                                    <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider w-24">Actions</th>
                                 </tr>
                             </thead>
-                            <tbody id="sortable-files">
+                            <tbody id="sortable-files" class="bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-700">
                                 @forelse($holdMusic->files ?? [] as $index => $file)
-                                    <tr data-id="{{ $file->id }}" class="cursor-move">
-                                        <td class="text-gray-500">
+                                    <tr data-id="{{ $file->id }}" class="cursor-move hover:bg-gray-50 dark:hover:bg-gray-800">
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                                             <svg class="w-5 h-5 inline-block mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8h16M4 16h16"/>
                                             </svg>
                                             {{ $index + 1 }}
                                         </td>
-                                        <td>
+                                        <td class="px-6 py-4 whitespace-nowrap">
                                             <div class="flex items-center">
                                                 <button type="button" class="play-btn mr-3 text-primary-600 hover:text-primary-800" data-src="{{ asset('storage/' . $file->file_path) }}">
                                                     <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 24 24">
@@ -132,20 +132,20 @@
                                                 </button>
                                                 <div>
                                                     <p class="font-medium text-gray-900 dark:text-white">{{ $file->original_filename }}</p>
-                                                    <p class="text-sm text-gray-500">{{ $file->converted_path ? 'Converted' : 'Original' }}</p>
+                                                    <p class="text-sm text-gray-500 dark:text-gray-400">{{ $file->converted_path ? 'Converted' : 'Original' }}</p>
                                                 </div>
                                             </div>
                                         </td>
-                                        <td>{{ gmdate('i:s', $file->duration ?? 0) }}</td>
-                                        <td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">{{ gmdate('i:s', $file->duration ?? 0) }}</td>
+                                        <td class="px-6 py-4 whitespace-nowrap">
                                             @if($file->is_active)
                                                 <span class="badge badge-success">Active</span>
                                             @else
                                                 <span class="badge badge-danger">Inactive</span>
                                             @endif
                                         </td>
-                                        <td class="text-right">
-                                            <form action="{{ route('hold-music.delete-file', [$holdMusic ?? 0, $file->id]) }}" method="POST" class="inline"
+                                        <td class="px-6 py-4 whitespace-nowrap text-right">
+                                            <form action="{{ route('hold-music.delete-file', [$holdMusic, $file]) }}" method="POST" class="inline"
                                                   onsubmit="return confirm('Delete this audio file?')">
                                                 @csrf
                                                 @method('DELETE')
@@ -159,7 +159,7 @@
                                     </tr>
                                 @empty
                                     <tr>
-                                        <td colspan="5" class="text-center py-12 text-gray-500 dark:text-gray-400">
+                                        <td colspan="5" class="px-6 py-12 text-center text-gray-500 dark:text-gray-400">
                                             No audio files uploaded yet. Use the form above to upload files.
                                         </td>
                                     </tr>

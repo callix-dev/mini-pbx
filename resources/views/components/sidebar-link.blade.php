@@ -31,9 +31,9 @@ $icons = [
 @endphp
 
 <a href="{{ $href }}" {{ $attributes->merge(['class' => $classes]) }}>
-    <svg class="w-5 h-5 flex-shrink-0" :class="{ 'mr-3': sidebarOpen || sidebarMobileOpen }" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <svg class="w-5 h-5 flex-shrink-0 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         {!! $icons[$icon] ?? $icons['home'] !!}
     </svg>
-    <span x-show="sidebarOpen || sidebarMobileOpen" class="truncate">{{ $slot }}</span>
+    <span x-show="sidebarOpen || sidebarMobileOpen" class="sidebar-text truncate">{{ $slot }}</span>
 </a>
 

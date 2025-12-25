@@ -1,11 +1,115 @@
 <!DOCTYPE html>
-<html lang="{{ str_replace('_', '-', app()->getLocale()) }}" x-data="{ darkMode: localStorage.getItem('darkMode') === 'true', sidebarOpen: true, sidebarMobileOpen: false }" x-init="$watch('darkMode', val => localStorage.setItem('darkMode', val))" :class="{ 'dark': darkMode }">
+<html lang="{{ str_replace('_', '-', app()->getLocale()) }}" 
+      x-data="{ 
+          darkMode: localStorage.getItem('darkMode') === 'true', 
+          sidebarOpen: localStorage.getItem('sidebarOpen') !== 'false', 
+          sidebarMobileOpen: false 
+      }" 
+      x-init="
+          $watch('darkMode', val => { localStorage.setItem('darkMode', val); document.documentElement.classList.toggle('dark', val); });
+          $watch('sidebarOpen', val => { localStorage.setItem('sidebarOpen', val); document.documentElement.classList.toggle('sidebar-collapsed', !val); });
+      ">
     <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <meta name="csrf-token" content="{{ csrf_token() }}">
 
         <title>{{ config('app.name', 'Mini PBX') }} - @yield('title', 'Dashboard')</title>
+
+        <!-- Prevent FOUC: Apply dark mode and sidebar state immediately before anything renders -->
+        <script>
+            (function() {
+                // Dark mode
+                if (localStorage.getItem('darkMode') === 'true') {
+                    document.documentElement.classList.add('dark');
+                }
+                // Sidebar state - collapsed when sidebarOpen is false
+                if (localStorage.getItem('sidebarOpen') === 'false') {
+                    document.documentElement.classList.add('sidebar-collapsed');
+                } else {
+                    document.documentElement.classList.add('sidebar-expanded');
+                }
+            })();
+        </script>
+
+        <!-- Critical CSS to prevent flash - MUST load before anything else -->
+        <style>
+            /* Hide dropdown/modal elements until Alpine initializes */
+            [x-cloak="dropdown"] { display: none !important; }
+            
+            /* Background colors */
+            html { background-color: #f9fafb; }
+            html.dark { background-color: #111827; }
+            
+            /* CRITICAL: Hide mobile sidebar ALWAYS until opened */
+            .mobile-sidebar-overlay,
+            .mobile-sidebar {
+                display: none !important;
+                visibility: hidden !important;
+                opacity: 0 !important;
+            }
+            
+            /* Sidebar background color to prevent white flash */
+            .sidebar-critical {
+                background-color: #1a1f2e;
+            }
+            
+            /* Sidebar text - visible by default when expanded */
+            .sidebar-text { display: inline; }
+            .sidebar-divider { display: none; }
+            
+            /* Sidebar collapsed state - hide text, show dividers */
+            .sidebar-collapsed .sidebar-text { display: none !important; }
+            .sidebar-collapsed .sidebar-divider { display: block !important; }
+            
+            /* Sidebar critical styles - prevents width jump */
+            @media (min-width: 1024px) {
+                .sidebar-critical { 
+                    width: 16rem;
+                    position: fixed;
+                    left: 0;
+                    top: 0;
+                    bottom: 0;
+                    display: flex;
+                    flex-direction: column;
+                }
+                .sidebar-collapsed .sidebar-critical { 
+                    width: 5rem;
+                }
+                .main-content-critical {
+                    margin-left: 16rem;
+                }
+                .sidebar-collapsed .main-content-critical {
+                    margin-left: 5rem;
+                }
+            }
+            
+            /* Hide desktop sidebar on mobile */
+            @media (max-width: 1023px) {
+                .sidebar-critical {
+                    display: none !important;
+                }
+                .main-content-critical {
+                    margin-left: 0 !important;
+                }
+            }
+            
+            /* Header critical styles - prevent layout shift */
+            .header-critical {
+                position: sticky;
+                top: 0;
+                z-index: 30;
+                min-height: 4rem;
+            }
+            html.dark .header-critical {
+                background-color: #1f2937;
+                border-color: #374151;
+            }
+            html:not(.dark) .header-critical {
+                background-color: #ffffff;
+                border-color: #e5e7eb;
+            }
+        </style>
 
         <!-- Fonts -->
         <link rel="preconnect" href="https://fonts.bunny.net">
@@ -18,15 +122,18 @@
     </head>
     <body class="font-sans antialiased bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
         <div class="min-h-screen flex">
-            <!-- Sidebar Overlay for Mobile -->
-            <div x-show="sidebarMobileOpen" 
+            <!-- Sidebar Overlay for Mobile - hidden by default -->
+            <div x-cloak
+                 x-show="sidebarMobileOpen" 
                  x-transition:enter="transition-opacity ease-linear duration-300"
                  x-transition:enter-start="opacity-0"
                  x-transition:enter-end="opacity-100"
                  x-transition:leave="transition-opacity ease-linear duration-300"
                  x-transition:leave-start="opacity-100"
                  x-transition:leave-end="opacity-0"
-                 class="fixed inset-0 z-40 bg-gray-900/80 lg:hidden"
+                 class="mobile-sidebar-overlay fixed inset-0 z-40 bg-gray-900/80 lg:hidden"
+                 style="display: none !important;"
+                 x-bind:style="sidebarMobileOpen ? 'display: block !important;' : 'display: none !important;'"
                  @click="sidebarMobileOpen = false">
             </div>
 
@@ -34,7 +141,7 @@
             @include('layouts.sidebar')
 
             <!-- Main Content Area -->
-            <div class="flex-1 flex flex-col min-w-0" :class="{ 'lg:ml-64': sidebarOpen, 'lg:ml-20': !sidebarOpen }">
+            <div class="main-content-critical flex-1 flex flex-col min-w-0 transition-all duration-300" :class="{ 'lg:ml-64': sidebarOpen, 'lg:ml-20': !sidebarOpen }">
                 <!-- Top Header -->
                 @include('layouts.header')
 

@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use App\Events\AgentStatusChanged;
 use App\Events\CallEnded;
 use App\Events\CallStarted;
+use App\Events\ExtensionStatusChanged;
 use App\Events\QueueUpdated;
 use App\Models\CallLog;
 use App\Models\Extension;
@@ -22,38 +23,51 @@ class AmiListener extends Command
     private $socket;
     private $connected = false;
     private $activeCalls = [];
+    private int $reconnectAttempts = 0;
+    private const MAX_RECONNECT_ATTEMPTS = 10;
+    private const RECONNECT_DELAY = 5; // seconds
 
     public function handle(): int
     {
         $this->info('Starting AMI Listener...');
 
-        $host = SystemSetting::getValue('ami_host', '127.0.0.1');
-        $port = SystemSetting::getValue('ami_port', 5038);
-        $username = SystemSetting::getValue('ami_username', 'admin');
-        $secret = SystemSetting::getValue('ami_secret', '');
+        // Use config first, fall back to SystemSetting
+        $host = config('asterisk.ami.host') ?: SystemSetting::get('ami_host', '127.0.0.1');
+        $port = (int) (config('asterisk.ami.port') ?: SystemSetting::get('ami_port', 5038));
+        $username = config('asterisk.ami.username') ?: SystemSetting::get('ami_username', 'admin');
+        $secret = config('asterisk.ami.password') ?: SystemSetting::get('ami_secret', '');
 
-        try {
-            $this->connect($host, $port);
-            $this->login($username, $secret);
+        while ($this->reconnectAttempts < self::MAX_RECONNECT_ATTEMPTS) {
+            try {
+                $this->connect($host, $port);
+                $this->login($username, $secret);
 
-            $this->info('Connected to AMI. Listening for events...');
+                $this->info('Connected to AMI. Listening for events...');
+                $this->reconnectAttempts = 0; // Reset on successful connection
 
-            while ($this->connected) {
-                $response = $this->readResponse();
+                while ($this->connected) {
+                    $response = $this->readResponse();
 
-                if ($response) {
-                    $this->processEvent($response);
+                    if ($response) {
+                        $this->processEvent($response);
+                    }
+
+                    usleep(10000); // 10ms delay to prevent CPU spinning
                 }
-
-                usleep(10000); // 10ms delay to prevent CPU spinning
+            } catch (\Exception $e) {
+                $this->error('AMI Error: ' . $e->getMessage());
+                Log::error('AMI Listener Error', ['error' => $e->getMessage()]);
+                
+                $this->reconnectAttempts++;
+                if ($this->reconnectAttempts < self::MAX_RECONNECT_ATTEMPTS) {
+                    $this->warn("Reconnecting in " . self::RECONNECT_DELAY . " seconds... (attempt {$this->reconnectAttempts}/" . self::MAX_RECONNECT_ATTEMPTS . ")");
+                    sleep(self::RECONNECT_DELAY);
+                }
             }
-        } catch (\Exception $e) {
-            $this->error('AMI Error: ' . $e->getMessage());
-            Log::error('AMI Listener Error', ['error' => $e->getMessage()]);
-            return 1;
         }
 
-        return 0;
+        $this->error('Max reconnect attempts reached. Exiting.');
+        return 1;
     }
 
     private function connect(string $host, int $port): void
@@ -131,7 +145,7 @@ class AmiListener extends Command
         }
 
         if ($this->option('debug')) {
-            $this->line("Event: $eventType");
+            $this->line("Event: $eventType - " . json_encode($event));
         }
 
         match ($eventType) {
@@ -144,6 +158,10 @@ class AmiListener extends Command
             'QueueCallerJoin' => $this->handleQueueCallerJoin($event),
             'QueueCallerLeave' => $this->handleQueueCallerLeave($event),
             'DeviceStateChange' => $this->handleDeviceStateChange($event),
+            // PJSIP Registration Events
+            'ContactStatus' => $this->handleContactStatus($event),
+            'PeerStatus' => $this->handlePeerStatus($event),
+            'ContactStatusDetail' => $this->handleContactStatusDetail($event),
             default => null,
         };
     }
@@ -317,6 +335,7 @@ class AmiListener extends Command
 
             $extensionModel = Extension::where('extension', $extension)->first();
             if ($extensionModel) {
+                $previousStatus = $extensionModel->status;
                 $status = match ($state) {
                     'NOT_INUSE' => 'online',
                     'INUSE', 'BUSY' => 'on_call',
@@ -324,9 +343,260 @@ class AmiListener extends Command
                     default => 'offline',
                 };
 
-                $extensionModel->update(['status' => $status]);
+                if ($previousStatus !== $status) {
+                    $extensionModel->update(['status' => $status]);
+                    
+                    // Broadcast extension status change
+                    broadcast(new ExtensionStatusChanged($extensionModel, $previousStatus, $status));
+                    
+                    // Also broadcast agent status if user is assigned
+                    if ($extensionModel->user) {
+                        broadcast(new AgentStatusChanged($extensionModel->user, $previousStatus, $status));
+                    }
+                    
+                    if ($this->option('debug')) {
+                        $this->info("Extension {$extension} status changed from {$previousStatus} to {$status}");
+                    }
+                }
             }
         }
+    }
+
+    /**
+     * Handle PJSIP ContactStatus event
+     * 
+     * Fired when a contact's reachability changes.
+     * ContactStatus: Reachable, Unreachable, NonQualified, Removed, Updated, Created
+     */
+    private function handleContactStatus(array $event): void
+    {
+        $aor = $event['AOR'] ?? null; // Address of Record (typically the extension number)
+        $contactStatus = $event['ContactStatus'] ?? null;
+        $uri = $event['URI'] ?? null;
+        $userAgent = $event['UserAgent'] ?? null;
+
+        if (!$aor) {
+            return;
+        }
+
+        // Extract extension number from AOR (format is usually "extension@realm" or just "extension")
+        $extension = explode('@', $aor)[0];
+
+        $extensionModel = Extension::where('extension', $extension)->first();
+        if (!$extensionModel) {
+            if ($this->option('debug')) {
+                $this->warn("ContactStatus: Extension {$extension} not found in database");
+            }
+            return;
+        }
+
+        // Determine status based on ContactStatus
+        $status = match ($contactStatus) {
+            'Reachable', 'Created', 'Updated' => 'online',
+            'Unreachable', 'Removed' => 'offline',
+            'NonQualified' => 'offline', // Qualify not enabled or failed
+            default => $extensionModel->status,
+        };
+
+        // Extract IP address from URI (format: sip:ext@ip:port)
+        $ipAddress = null;
+        if ($uri && preg_match('/@([^:]+)/', $uri, $matches)) {
+            $ipAddress = $matches[1];
+        }
+
+        $previousStatus = $extensionModel->status;
+        $updateData = ['status' => $status];
+        
+        // Only update registration info if becoming reachable
+        if (in_array($contactStatus, ['Reachable', 'Created', 'Updated'])) {
+            $updateData['last_registered_at'] = now();
+            if ($ipAddress) {
+                $updateData['last_registered_ip'] = $ipAddress;
+            }
+        }
+
+        // Only broadcast if status actually changed
+        if ($previousStatus !== $status) {
+            $extensionModel->update($updateData);
+
+            // Broadcast extension status change
+            broadcast(new ExtensionStatusChanged($extensionModel, $previousStatus, $status));
+
+            // Broadcast agent status change if user is assigned
+            if ($extensionModel->user) {
+                broadcast(new AgentStatusChanged($extensionModel->user, $previousStatus, $status));
+            }
+
+            if ($this->option('debug')) {
+                $this->info("ContactStatus: Extension {$extension} changed from {$previousStatus} to {$status} from {$ipAddress}");
+            }
+
+            Log::info("PJSIP ContactStatus", [
+                'extension' => $extension,
+                'contact_status' => $contactStatus,
+                'previous_status' => $previousStatus,
+                'status' => $status,
+                'ip' => $ipAddress,
+                'user_agent' => $userAgent,
+            ]);
+        } else {
+            // Still update registration info even if status didn't change
+            $extensionModel->update($updateData);
+        }
+    }
+
+    /**
+     * Handle PJSIP PeerStatus event
+     * 
+     * Fired when an endpoint's registration status changes.
+     * PeerStatus: Registered, Unregistered, Rejected, Reachable, Unreachable
+     */
+    private function handlePeerStatus(array $event): void
+    {
+        $peer = $event['Peer'] ?? null; // Format: PJSIP/extension
+        $peerStatus = $event['PeerStatus'] ?? null;
+        $address = $event['Address'] ?? null;
+        $cause = $event['Cause'] ?? null;
+
+        if (!$peer || !str_starts_with($peer, 'PJSIP/')) {
+            return;
+        }
+
+        $extension = str_replace('PJSIP/', '', $peer);
+
+        $extensionModel = Extension::where('extension', $extension)->first();
+        if (!$extensionModel) {
+            if ($this->option('debug')) {
+                $this->warn("PeerStatus: Extension {$extension} not found in database");
+            }
+            return;
+        }
+
+        // Determine status based on PeerStatus
+        $status = match ($peerStatus) {
+            'Registered', 'Reachable' => 'online',
+            'Unregistered', 'Unreachable' => 'offline',
+            'Rejected' => 'offline',
+            default => $extensionModel->status,
+        };
+
+        // Extract IP from address (format: ip:port)
+        $ipAddress = null;
+        if ($address && preg_match('/^([^:]+)/', $address, $matches)) {
+            $ipAddress = $matches[1];
+        }
+
+        $previousStatus = $extensionModel->status;
+        $updateData = ['status' => $status];
+        
+        // Only update registration info on successful registration
+        if ($peerStatus === 'Registered') {
+            $updateData['last_registered_at'] = now();
+            if ($ipAddress) {
+                $updateData['last_registered_ip'] = $ipAddress;
+            }
+        }
+
+        // Only broadcast if status actually changed
+        if ($previousStatus !== $status) {
+            $extensionModel->update($updateData);
+
+            // Broadcast extension status change
+            broadcast(new ExtensionStatusChanged($extensionModel, $previousStatus, $status));
+
+            // Broadcast agent status change if user is assigned
+            if ($extensionModel->user) {
+                broadcast(new AgentStatusChanged($extensionModel->user, $previousStatus, $status));
+            }
+
+            if ($this->option('debug')) {
+                $this->info("PeerStatus: {$peer} changed from {$previousStatus} to {$status}" . ($cause ? " - {$cause}" : ''));
+            }
+
+            Log::info("PJSIP PeerStatus", [
+                'extension' => $extension,
+                'peer_status' => $peerStatus,
+                'previous_status' => $previousStatus,
+                'status' => $status,
+                'ip' => $ipAddress,
+                'cause' => $cause,
+            ]);
+        } else {
+            // Still update registration info even if status didn't change
+            $extensionModel->update($updateData);
+        }
+    }
+
+    /**
+     * Handle ContactStatusDetail event
+     * 
+     * Provides detailed information about a contact during a ContactList action.
+     */
+    private function handleContactStatusDetail(array $event): void
+    {
+        $aor = $event['AOR'] ?? null;
+        $status = $event['Status'] ?? null;
+        $uri = $event['URI'] ?? null;
+        $userAgent = $event['UserAgent'] ?? null;
+        $roundtripUsec = $event['RoundtripUsec'] ?? null;
+
+        if (!$aor) {
+            return;
+        }
+
+        $extension = explode('@', $aor)[0];
+
+        // Extract IP address from URI
+        $ipAddress = null;
+        if ($uri && preg_match('/@([^:]+)/', $uri, $matches)) {
+            $ipAddress = $matches[1];
+        }
+
+        $extensionModel = Extension::where('extension', $extension)->first();
+        if ($extensionModel) {
+            $previousStatus = $extensionModel->status;
+            $isReachable = $status === 'Reachable';
+            $newStatus = $isReachable ? 'online' : 'offline';
+            
+            $updateData = [
+                'status' => $newStatus,
+            ];
+            
+            if ($isReachable) {
+                $updateData['last_registered_at'] = now();
+                if ($ipAddress) {
+                    $updateData['last_registered_ip'] = $ipAddress;
+                }
+            }
+
+            if ($previousStatus !== $newStatus) {
+                $extensionModel->update($updateData);
+                
+                // Broadcast status change
+                broadcast(new ExtensionStatusChanged($extensionModel, $previousStatus, $newStatus));
+                
+                if ($extensionModel->user) {
+                    broadcast(new AgentStatusChanged($extensionModel->user, $previousStatus, $newStatus));
+                }
+
+                if ($this->option('debug')) {
+                    $latencyMs = $roundtripUsec ? round($roundtripUsec / 1000, 2) : 'N/A';
+                    $this->info("ContactStatusDetail: {$extension} changed from {$previousStatus} to {$newStatus} (latency: {$latencyMs}ms)");
+                }
+            } else {
+                $extensionModel->update($updateData);
+            }
+        }
+    }
+
+    /**
+     * Request contact list from Asterisk to refresh all extension statuses
+     */
+    public function refreshContactStatus(): void
+    {
+        $this->sendCommand([
+            'Action' => 'PJSIPShowContacts',
+        ]);
     }
 
     public function __destruct()
@@ -339,4 +609,3 @@ class AmiListener extends Command
         }
     }
 }
-

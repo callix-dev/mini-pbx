@@ -23,6 +23,7 @@ use App\Http\Controllers\Platform\ApiKeyController;
 use App\Http\Controllers\Platform\AuditLogController;
 use App\Http\Controllers\Platform\BackupController;
 use App\Http\Controllers\Agent\CallbackController;
+use App\Http\Controllers\SoftphoneController;
 use Illuminate\Support\Facades\Route;
 
 // Public routes
@@ -39,6 +40,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
+
+    // Softphone (popup window)
+    Route::get('/softphone', [SoftphoneController::class, 'index'])->name('softphone');
 
     // Agent Callbacks
     Route::prefix('callbacks')->name('callbacks.')->group(function () {
@@ -119,7 +123,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         // Hold Music
         Route::resource('hold-music', HoldMusicController::class);
         Route::post('hold-music/{holdMusic}/files', [HoldMusicController::class, 'uploadFile'])->name('hold-music.upload-file');
-        Route::delete('hold-music/{holdMusic}/files/{file}', [HoldMusicController::class, 'deleteFile'])->name('hold-music.delete-file');
+        Route::delete('hold-music/{holdMusic}/files/{holdMusicFile}', [HoldMusicController::class, 'deleteFile'])->name('hold-music.delete-file');
 
         // Soundboards
         Route::resource('soundboards', SoundboardController::class);
@@ -128,6 +132,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
         // Dispositions
         Route::resource('dispositions', DispositionController::class);
+        Route::post('dispositions/reorder', [DispositionController::class, 'reorder'])->name('dispositions.reorder');
     });
 
     // Platform Routes (Admin only)

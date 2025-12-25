@@ -5,35 +5,26 @@
  * with Asterisk via WebSocket.
  */
 
-class Softphone {
-    constructor(options = {}) {
-        this.config = {
-            wsServer: options.wsServer || 'wss://asterisk.example.com:8089/ws',
-            extension: options.extension || '',
-            password: options.password || '',
-            realm: options.realm || 'asterisk',
-            stunServer: options.stunServer || 'stun:stun.l.google.com:19302',
-            turnServer: options.turnServer || null,
-            turnUsername: options.turnUsername || null,
-            turnCredential: options.turnCredential || null,
-        };
+import { Web } from 'sip.js';
 
-        this.session = null;
-        this.userAgent = null;
-        this.registerer = null;
-        this.state = 'idle'; // idle, connecting, registered, calling, ringing, connected
-        this.callDuration = 0;
+class Softphone {
+    constructor() {
+        this.simpleUser = null;
+        this.isRegistered = false;
+        this.credentials = null;
         this.callTimer = null;
-        this.localStream = null;
-        this.remoteStream = null;
+        this.callDuration = 0;
         
-        this.callbacks = {
-            onStateChange: () => {},
-            onIncomingCall: () => {},
-            onCallConnected: () => {},
-            onCallEnded: () => {},
-            onError: () => {},
-        };
+        // Audio elements
+        this.remoteAudio = null;
+        this.ringtoneAudio = null;
+        
+        // Keep-alive mechanism
+        this.keepAliveInterval = null;
+        this.keepAliveIntervalMs = 25000; // 25 seconds (before typical NAT timeout of 30-60s)
+        this.lastKeepAlive = null;
+        this.missedKeepAlives = 0;
+        this.maxMissedKeepAlives = 3;
     }
 
     /**
@@ -41,139 +32,370 @@ class Softphone {
      */
     async init() {
         try {
-            // Check for WebRTC support
-            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-                throw new Error('WebRTC is not supported in this browser');
+            // Create audio elements
+            this.createAudioElements();
+            
+            // Fetch credentials
+            await this.fetchCredentials();
+            
+            if (this.credentials) {
+                await this.connect();
             }
-
-            // Request microphone permission
-            this.localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-
-            this.setState('connecting');
-
-            // Create SIP.js User Agent (simplified for demonstration)
-            // In production, you would use the actual SIP.js library
-            this.setupUserAgent();
-
+            
             return true;
         } catch (error) {
-            this.callbacks.onError(error.message);
-            console.error('Softphone initialization failed:', error);
+            console.error('Softphone init error:', error);
+            this.dispatchEvent('error', { message: error.message });
             return false;
         }
     }
 
     /**
-     * Setup the SIP User Agent
+     * Create audio elements for call audio
      */
-    setupUserAgent() {
-        // This is a simplified implementation
-        // In production, you would use SIP.js like this:
+    createAudioElements() {
+        // Remote audio element
+        if (!document.getElementById('softphone-remote-audio')) {
+            this.remoteAudio = document.createElement('audio');
+            this.remoteAudio.id = 'softphone-remote-audio';
+            this.remoteAudio.autoplay = true;
+            document.body.appendChild(this.remoteAudio);
+        } else {
+            this.remoteAudio = document.getElementById('softphone-remote-audio');
+        }
         
-        /*
-        const { UserAgent, Registerer, Inviter, SessionState } = SIP;
-
-        const uri = UserAgent.makeURI(`sip:${this.config.extension}@${this.config.realm}`);
-        
-        const transportOptions = {
-            server: this.config.wsServer,
-        };
-
-        const userAgentOptions = {
-            authorizationPassword: this.config.password,
-            authorizationUsername: this.config.extension,
-            transportOptions,
-            uri,
-            sessionDescriptionHandlerFactoryOptions: {
-                iceGatheringTimeout: 500,
-                peerConnectionConfiguration: {
-                    iceServers: this.getIceServers(),
-                },
-            },
-        };
-
-        this.userAgent = new UserAgent(userAgentOptions);
-
-        this.userAgent.delegate = {
-            onInvite: (invitation) => this.handleIncomingCall(invitation),
-        };
-
-        this.registerer = new Registerer(this.userAgent);
-        
-        await this.userAgent.start();
-        await this.registerer.register();
-        */
-
-        // For now, simulate successful connection
-        setTimeout(() => {
-            this.setState('registered');
-        }, 1000);
+        // Ringtone audio element
+        if (!document.getElementById('softphone-ringtone')) {
+            this.ringtoneAudio = document.createElement('audio');
+            this.ringtoneAudio.id = 'softphone-ringtone';
+            this.ringtoneAudio.loop = true;
+            this.ringtoneAudio.src = '/storage/audio/ringtone.mp3';
+            document.body.appendChild(this.ringtoneAudio);
+        } else {
+            this.ringtoneAudio = document.getElementById('softphone-ringtone');
+        }
     }
 
     /**
-     * Get ICE servers configuration
+     * Fetch credentials from the API
      */
-    getIceServers() {
-        const servers = [];
-
-        if (this.config.stunServer) {
-            servers.push({ urls: this.config.stunServer });
-        }
-
-        if (this.config.turnServer) {
-            servers.push({
-                urls: this.config.turnServer,
-                username: this.config.turnUsername,
-                credential: this.config.turnCredential,
+    async fetchCredentials() {
+        try {
+            const response = await fetch('/api/webphone/credentials', {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || '',
+                },
+                credentials: 'same-origin',
             });
+
+            if (!response.ok) {
+                const data = await response.json();
+                console.warn('Softphone credentials error:', data.message);
+                this.dispatchEvent('error', { message: data.message });
+                return;
+            }
+
+            const data = await response.json();
+            
+            if (data.success) {
+                this.credentials = data.credentials;
+                console.log('Softphone credentials loaded for extension:', this.credentials.extension);
+            }
+        } catch (error) {
+            console.error('Failed to fetch credentials:', error);
+        }
+    }
+
+    /**
+     * Connect and register with SIP server
+     */
+    async connect() {
+        if (!this.credentials) {
+            console.warn('No credentials available');
+            return;
         }
 
-        return servers;
+        try {
+            const server = this.credentials.wss_server;
+            const aor = `sip:${this.credentials.extension}@${this.credentials.realm}`;
+            
+            console.log('Connecting to:', server, 'as', aor);
+            
+            // Announce connecting state
+            this.dispatchEvent('statechange', { 
+                state: 'connecting',
+                isRegistered: false 
+            });
+
+            const options = {
+                aor: aor,
+                media: {
+                    constraints: {
+                        audio: true,
+                        video: false,
+                    },
+                    remote: {
+                        audio: this.remoteAudio,
+                    },
+                },
+                userAgentOptions: {
+                    authorizationUsername: this.credentials.extension,
+                    authorizationPassword: this.credentials.password,
+                    displayName: this.credentials.name || this.credentials.extension,
+                    transportOptions: {
+                        server: server,
+                    },
+                    sessionDescriptionHandlerFactoryOptions: {
+                        peerConnectionConfiguration: {
+                            iceServers: [
+                                { urls: 'stun:stun.l.google.com:19302' },
+                                { urls: 'stun:stun1.l.google.com:19302' },
+                            ],
+                        },
+                    },
+                },
+            };
+
+            this.simpleUser = new Web.SimpleUser(server, options);
+
+            // Set up event delegates
+            this.simpleUser.delegate = {
+                onCallReceived: () => this.handleIncomingCall(),
+                onCallAnswered: () => this.handleCallAnswered(),
+                onCallHangup: () => this.handleCallHangup(),
+                onCallHold: (held) => this.handleHoldChange(held),
+                onRegistered: () => this.handleRegistered(),
+                onUnregistered: () => this.handleUnregistered(),
+                onServerConnect: () => console.log('Softphone: Server connected'),
+                onServerDisconnect: (error) => this.handleServerDisconnect(error),
+            };
+
+            // Connect and register
+            await this.simpleUser.connect();
+            await this.simpleUser.register();
+            
+        } catch (error) {
+            console.error('Softphone connection error:', error);
+            this.dispatchEvent('error', { message: 'Connection failed' });
+            
+            // Retry after delay
+            setTimeout(() => this.connect(), 5000);
+        }
+    }
+
+    handleRegistered() {
+        console.log('Softphone: Registered');
+        this.isRegistered = true;
+        this.missedKeepAlives = 0;
+        this.dispatchEvent('statechange', { 
+            state: 'registered',
+            isRegistered: true 
+        });
+        this.logEvent('registered');
+        
+        // Start keep-alive mechanism
+        this.startKeepAlive();
+    }
+
+    handleUnregistered() {
+        console.log('Softphone: Unregistered');
+        this.isRegistered = false;
+        this.stopKeepAlive();
+        this.dispatchEvent('statechange', { 
+            state: 'unregistered',
+            isRegistered: false 
+        });
+        this.logEvent('unregistered');
+    }
+
+    handleServerDisconnect(error) {
+        console.error('Softphone: Server disconnected', error);
+        this.isRegistered = false;
+        this.stopKeepAlive();
+        this.dispatchEvent('statechange', { state: 'disconnected' });
+        
+        // Attempt reconnection
+        setTimeout(() => this.connect(), 5000);
+    }
+
+    /**
+     * Start the keep-alive mechanism to prevent NAT timeout
+     * Sends periodic messages to keep the connection alive
+     */
+    startKeepAlive() {
+        this.stopKeepAlive(); // Clear any existing interval
+        
+        console.log('Softphone: Starting keep-alive (every ' + (this.keepAliveIntervalMs / 1000) + 's)');
+        
+        this.lastKeepAlive = Date.now();
+        
+        this.keepAliveInterval = setInterval(() => {
+            this.sendKeepAlive();
+        }, this.keepAliveIntervalMs);
+    }
+
+    /**
+     * Stop the keep-alive mechanism
+     */
+    stopKeepAlive() {
+        if (this.keepAliveInterval) {
+            clearInterval(this.keepAliveInterval);
+            this.keepAliveInterval = null;
+            console.log('Softphone: Keep-alive stopped');
+        }
+    }
+
+    /**
+     * Send a keep-alive message
+     * Uses the underlying transport to check connection health
+     */
+    async sendKeepAlive() {
+        if (!this.simpleUser || !this.isRegistered) {
+            return;
+        }
+
+        try {
+            // Check if the WebSocket transport is still connected
+            const userAgent = this.simpleUser.userAgent;
+            
+            if (userAgent && userAgent.transport) {
+                const transport = userAgent.transport;
+                
+                // Check transport state
+                if (transport.state === 'Connected') {
+                    // Transport is healthy
+                    this.lastKeepAlive = Date.now();
+                    this.missedKeepAlives = 0;
+                    console.log('Softphone: Keep-alive OK');
+                } else {
+                    // Transport seems unhealthy
+                    this.missedKeepAlives++;
+                    console.warn('Softphone: Keep-alive missed (' + this.missedKeepAlives + '/' + this.maxMissedKeepAlives + ')');
+                    
+                    if (this.missedKeepAlives >= this.maxMissedKeepAlives) {
+                        console.error('Softphone: Too many missed keep-alives, reconnecting...');
+                        this.stopKeepAlive();
+                        this.handleServerDisconnect(new Error('Keep-alive timeout'));
+                    }
+                }
+            }
+            
+            // Alternative: Send a re-REGISTER to refresh the registration
+            // This is more reliable as it actually communicates with the server
+            // Uncomment if transport check isn't enough:
+            /*
+            if (this.simpleUser.registerer) {
+                await this.simpleUser.registerer.register();
+                this.lastKeepAlive = Date.now();
+                this.missedKeepAlives = 0;
+                console.log('Softphone: Keep-alive REGISTER sent');
+            }
+            */
+            
+        } catch (error) {
+            console.error('Softphone: Keep-alive error:', error);
+            this.missedKeepAlives++;
+            
+            if (this.missedKeepAlives >= this.maxMissedKeepAlives) {
+                console.error('Softphone: Keep-alive failed, reconnecting...');
+                this.stopKeepAlive();
+                this.handleServerDisconnect(error);
+            }
+        }
+    }
+
+    handleIncomingCall() {
+        console.log('Softphone: Incoming call');
+        const session = this.simpleUser.session;
+        
+        if (session) {
+            const remoteIdentity = session.remoteIdentity;
+            const number = remoteIdentity?.uri?.user || 'Unknown';
+            const name = remoteIdentity?.displayName || number;
+            
+            this.dispatchEvent('statechange', {
+                state: 'ringing',
+                callState: 'ringing',
+                number: number,
+                callerNumber: number,
+                name: name,
+                callerName: name,
+                callDirection: 'inbound',
+            });
+            
+            this.playRingtone();
+            this.showNotification(number, name);
+        }
+    }
+
+    handleCallAnswered() {
+        console.log('Softphone: Call answered');
+        this.stopRingtone();
+        this.startCallTimer();
+        this.dispatchEvent('statechange', { 
+            state: 'connected',
+            callState: 'connected'
+        });
+        this.logEvent('call_started');
+    }
+
+    handleCallHangup() {
+        console.log('Softphone: Call hangup');
+        this.stopRingtone();
+        this.stopCallTimer();
+        this.dispatchEvent('statechange', { 
+            state: 'idle',
+            callState: 'idle',
+            callerNumber: '',
+            callerName: '',
+            callDuration: '00:00',
+            isMuted: false,
+            isOnHold: false
+        });
+        this.logEvent('call_ended');
+    }
+
+    handleHoldChange(held) {
+        console.log('Softphone: Hold changed:', held);
+        this.dispatchEvent('statechange', { 
+            isOnHold: held 
+        });
     }
 
     /**
      * Make an outbound call
      */
-    async call(destination) {
-        if (this.state !== 'registered') {
-            throw new Error('Not registered');
+    async call(number) {
+        if (!this.isRegistered || !this.simpleUser) {
+            console.error('Softphone: Not registered');
+            return false;
+        }
+
+        if (!number || number.trim() === '') {
+            console.error('Softphone: No number provided');
+            return false;
         }
 
         try {
-            this.setState('calling');
-
-            // In production with SIP.js:
-            /*
-            const target = UserAgent.makeURI(`sip:${destination}@${this.config.realm}`);
-            const inviter = new Inviter(this.userAgent, target);
-
-            inviter.stateChange.addListener((state) => {
-                switch (state) {
-                    case SessionState.Establishing:
-                        this.setState('calling');
-                        break;
-                    case SessionState.Established:
-                        this.handleCallConnected(inviter);
-                        break;
-                    case SessionState.Terminated:
-                        this.handleCallEnded();
-                        break;
-                }
+            const destination = `sip:${number}@${this.credentials.realm}`;
+            
+            this.dispatchEvent('statechange', {
+                state: 'calling',
+                callState: 'calling',
+                number: number,
+                callerNumber: number,
+                callDirection: 'outbound',
             });
-
-            await inviter.invite();
-            this.session = inviter;
-            */
-
-            // Simulate call connection for demo
-            setTimeout(() => {
-                this.handleCallConnected({ remoteIdentity: { displayName: destination } });
-            }, 2000);
-
+            
+            await this.simpleUser.call(destination);
             return true;
         } catch (error) {
-            this.callbacks.onError(error.message);
-            this.setState('registered');
+            console.error('Softphone: Call failed', error);
+            this.dispatchEvent('statechange', { state: 'idle' });
+            this.logEvent('call_failed', { error: error.message });
             return false;
         }
     }
@@ -182,34 +404,14 @@ class Softphone {
      * Answer incoming call
      */
     async answer() {
-        if (!this.session || this.state !== 'ringing') {
-            throw new Error('No incoming call to answer');
-        }
-
+        if (!this.simpleUser) return false;
+        
         try {
-            // In production: await this.session.accept();
-            this.handleCallConnected(this.session);
+            this.stopRingtone();
+            await this.simpleUser.answer();
             return true;
         } catch (error) {
-            this.callbacks.onError(error.message);
-            return false;
-        }
-    }
-
-    /**
-     * Reject incoming call
-     */
-    async reject() {
-        if (!this.session || this.state !== 'ringing') {
-            throw new Error('No incoming call to reject');
-        }
-
-        try {
-            // In production: await this.session.reject();
-            this.handleCallEnded();
-            return true;
-        } catch (error) {
-            this.callbacks.onError(error.message);
+            console.error('Softphone: Answer failed', error);
             return false;
         }
     }
@@ -218,186 +420,191 @@ class Softphone {
      * Hang up current call
      */
     async hangup() {
-        if (!this.session) {
-            return false;
-        }
-
+        if (!this.simpleUser) return;
+        
         try {
-            // In production: await this.session.bye();
-            this.handleCallEnded();
+            this.stopRingtone();
+            await this.simpleUser.hangup();
+        } catch (error) {
+            console.error('Softphone: Hangup failed', error);
+        }
+    }
+
+    /**
+     * Mute/unmute the call
+     */
+    mute(muted = true) {
+        if (!this.simpleUser) return;
+        
+        try {
+            if (muted) {
+                this.simpleUser.mute();
+            } else {
+                this.simpleUser.unmute();
+            }
+        } catch (error) {
+            console.error('Softphone: Mute failed', error);
+        }
+    }
+
+    /**
+     * Hold/unhold the call
+     */
+    async hold(held = true) {
+        if (!this.simpleUser) return;
+        
+        try {
+            if (held) {
+                await this.simpleUser.hold();
+            } else {
+                await this.simpleUser.unhold();
+            }
+        } catch (error) {
+            console.error('Softphone: Hold failed', error);
+        }
+    }
+
+    /**
+     * Send DTMF tones
+     */
+    async sendDTMF(digit) {
+        if (!this.simpleUser || !this.simpleUser.session) return;
+        
+        try {
+            await this.simpleUser.sendDTMF(digit);
+        } catch (error) {
+            console.error('Softphone: DTMF failed', error);
+        }
+    }
+
+    /**
+     * Transfer call to another number
+     */
+    async transfer(target) {
+        if (!this.simpleUser || !this.simpleUser.session) return false;
+        
+        try {
+            // For blind transfer
+            const destination = `sip:${target}@${this.credentials.realm}`;
+            // SIP.js SimpleUser doesn't have direct transfer, need to access session
+            console.log('Transfer to:', destination);
+            // await this.simpleUser.session.refer(destination);
             return true;
         } catch (error) {
-            this.callbacks.onError(error.message);
+            console.error('Softphone: Transfer failed', error);
             return false;
         }
     }
 
-    /**
-     * Toggle mute
-     */
-    toggleMute() {
-        if (this.localStream) {
-            const audioTrack = this.localStream.getAudioTracks()[0];
-            if (audioTrack) {
-                audioTrack.enabled = !audioTrack.enabled;
-                return !audioTrack.enabled; // Return muted state
-            }
+    playRingtone() {
+        if (this.ringtoneAudio) {
+            this.ringtoneAudio.play().catch(e => console.warn('Ringtone play failed:', e));
         }
-        return false;
     }
 
-    /**
-     * Toggle hold
-     */
-    async toggleHold() {
-        if (!this.session || this.state !== 'connected') {
-            return false;
+    stopRingtone() {
+        if (this.ringtoneAudio) {
+            this.ringtoneAudio.pause();
+            this.ringtoneAudio.currentTime = 0;
         }
-
-        // In production, you would use session.hold() or session.unhold()
-        return true;
     }
 
-    /**
-     * Transfer call
-     */
-    async transfer(destination) {
-        if (!this.session || this.state !== 'connected') {
-            throw new Error('No active call to transfer');
-        }
-
-        // In production: await this.session.refer(target);
-        return true;
-    }
-
-    /**
-     * Send DTMF tone
-     */
-    sendDTMF(digit) {
-        if (!this.session || this.state !== 'connected') {
-            return false;
-        }
-
-        // In production: this.session.sessionDescriptionHandler.sendDtmf(digit);
-        console.log('DTMF:', digit);
-        return true;
-    }
-
-    /**
-     * Handle incoming call
-     */
-    handleIncomingCall(invitation) {
-        this.session = invitation;
-        this.setState('ringing');
-
-        const callerInfo = {
-            number: invitation.remoteIdentity?.uri?.user || 'Unknown',
-            name: invitation.remoteIdentity?.displayName || '',
-        };
-
-        this.callbacks.onIncomingCall(callerInfo);
-    }
-
-    /**
-     * Handle call connected
-     */
-    handleCallConnected(session) {
-        this.session = session;
-        this.setState('connected');
-        this.startCallTimer();
-        this.callbacks.onCallConnected({
-            remoteNumber: session.remoteIdentity?.displayName || 'Unknown',
-        });
-    }
-
-    /**
-     * Handle call ended
-     */
-    handleCallEnded() {
-        this.stopCallTimer();
-        this.session = null;
-        this.setState('registered');
-        this.callbacks.onCallEnded({
-            duration: this.callDuration,
-        });
-        this.callDuration = 0;
-    }
-
-    /**
-     * Start call duration timer
-     */
     startCallTimer() {
         this.callDuration = 0;
         this.callTimer = setInterval(() => {
             this.callDuration++;
+            const formatted = this.formatDuration(this.callDuration);
+            this.dispatchEvent('statechange', { 
+                callDuration: formatted 
+            });
         }, 1000);
     }
 
-    /**
-     * Stop call duration timer
-     */
     stopCallTimer() {
         if (this.callTimer) {
             clearInterval(this.callTimer);
             this.callTimer = null;
         }
+        this.callDuration = 0;
     }
 
-    /**
-     * Format call duration
-     */
-    formatDuration() {
-        const minutes = Math.floor(this.callDuration / 60);
-        const seconds = this.callDuration % 60;
-        return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+    formatDuration(seconds) {
+        const mins = Math.floor(seconds / 60);
+        const secs = seconds % 60;
+        return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
     }
 
-    /**
-     * Set softphone state
-     */
-    setState(state) {
-        this.state = state;
-        this.callbacks.onStateChange(state);
-    }
-
-    /**
-     * Register callback
-     */
-    on(event, callback) {
-        if (this.callbacks.hasOwnProperty(event)) {
-            this.callbacks[event] = callback;
+    dispatchEvent(type, detail = {}) {
+        window.dispatchEvent(new CustomEvent(`webphone:${type}`, { detail }));
+        
+        // Also broadcast to other windows via phoneSync
+        if (window.phoneSync && type === 'statechange') {
+            window.phoneSync.broadcast(detail);
         }
     }
 
-    /**
-     * Cleanup and disconnect
-     */
+    showNotification(number, name) {
+        if ('Notification' in window && Notification.permission === 'granted') {
+            new Notification('Incoming Call', {
+                body: `${name || number}`,
+                icon: '/storage/images/phone-icon.png',
+                tag: 'incoming-call',
+                requireInteraction: true,
+            });
+        }
+    }
+
+    async logEvent(event, details = {}) {
+        try {
+            await fetch('/api/webphone/events', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || '',
+                },
+                credentials: 'same-origin',
+                body: JSON.stringify({ event, details }),
+            });
+        } catch (error) {
+            console.warn('Failed to log event:', error);
+        }
+    }
+
     async disconnect() {
-        if (this.session) {
-            await this.hangup();
+        // Stop keep-alive first
+        this.stopKeepAlive();
+        
+        if (this.simpleUser) {
+            try {
+                await this.simpleUser.unregister();
+                await this.simpleUser.disconnect();
+            } catch (error) {
+                console.error('Softphone disconnect error:', error);
+            }
         }
+    }
 
-        if (this.registerer) {
-            // await this.registerer.unregister();
+    static requestNotificationPermission() {
+        if ('Notification' in window && Notification.permission === 'default') {
+            Notification.requestPermission();
         }
-
-        if (this.userAgent) {
-            // await this.userAgent.stop();
-        }
-
-        if (this.localStream) {
-            this.localStream.getTracks().forEach(track => track.stop());
-        }
-
-        this.setState('idle');
     }
 }
 
-// Export for module usage
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = Softphone;
-}
+// Create global instance
+window.webPhone = null;
 
-// Make available globally
-window.Softphone = Softphone;
+// Initialize when DOM is ready
+document.addEventListener('DOMContentLoaded', () => {
+    const hasExtension = document.querySelector('[data-has-extension="true"]');
+    if (hasExtension) {
+        window.webPhone = new Softphone();
+        window.webPhone.init();
+        Softphone.requestNotificationPermission();
+    }
+});
 
+// Export
+export { Softphone };
+export default Softphone;

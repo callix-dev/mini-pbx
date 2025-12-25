@@ -112,43 +112,50 @@ class HoldMusicController extends Controller
     public function uploadFile(Request $request, HoldMusic $holdMusic): RedirectResponse
     {
         $request->validate([
-            'file' => 'required|file|mimes:mp3,wav,ogg|max:20480', // 20MB max
+            'files' => 'required|array',
+            'files.*' => 'file|mimes:mp3,wav,ogg,gsm|max:20480', // 20MB max per file
         ]);
 
-        $file = $request->file('file');
-        $originalName = $file->getClientOriginalName();
-        $path = $file->store('hold_music/' . $holdMusic->directory_name);
+        $uploadedCount = 0;
+        $sortOrder = $holdMusic->files()->count();
 
-        // TODO: Convert to Asterisk format using AudioConverter service
-        // $convertedPath = app(AudioConverter::class)->convert(storage_path('app/' . $path));
+        foreach ($request->file('files') as $file) {
+            $originalName = $file->getClientOriginalName();
+            $path = $file->store('hold_music/' . $holdMusic->directory_name, 'public');
 
-        $holdMusicFile = $holdMusic->files()->create([
-            'original_filename' => $originalName,
-            'file_path' => $path,
-            'converted_path' => null, // Will be set after conversion
-            'sort_order' => $holdMusic->files()->count(),
-            'is_active' => true,
-        ]);
+            // TODO: Convert to Asterisk format using AudioConverter service
+            // $convertedPath = app(AudioConverter::class)->convert(storage_path('app/public/' . $path));
+
+            $holdMusic->files()->create([
+                'original_filename' => $originalName,
+                'file_path' => $path,
+                'converted_path' => null, // Will be set after conversion
+                'sort_order' => $sortOrder++,
+                'is_active' => true,
+            ]);
+
+            $uploadedCount++;
+        }
 
         return redirect()->back()
-            ->with('success', 'Audio file uploaded successfully.');
+            ->with('success', $uploadedCount . ' audio file(s) uploaded successfully.');
     }
 
-    public function deleteFile(HoldMusic $holdMusic, HoldMusicFile $file): RedirectResponse
+    public function deleteFile(HoldMusic $holdMusic, HoldMusicFile $holdMusicFile): RedirectResponse
     {
-        if ($file->hold_music_id !== $holdMusic->id) {
+        if ($holdMusicFile->hold_music_id !== $holdMusic->id) {
             abort(404);
         }
 
         // Delete files from storage
-        if (file_exists(storage_path('app/' . $file->file_path))) {
-            unlink(storage_path('app/' . $file->file_path));
+        if (\Storage::disk('public')->exists($holdMusicFile->file_path)) {
+            \Storage::disk('public')->delete($holdMusicFile->file_path);
         }
-        if ($file->converted_path && file_exists(storage_path('app/' . $file->converted_path))) {
-            unlink(storage_path('app/' . $file->converted_path));
+        if ($holdMusicFile->converted_path && \Storage::disk('public')->exists($holdMusicFile->converted_path)) {
+            \Storage::disk('public')->delete($holdMusicFile->converted_path);
         }
 
-        $file->delete();
+        $holdMusicFile->delete();
 
         return redirect()->back()
             ->with('success', 'Audio file deleted successfully.');

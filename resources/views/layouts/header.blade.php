@@ -1,4 +1,4 @@
-<header class="sticky top-0 z-30 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
+<header class="header-critical sticky top-0 z-30 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
     <div class="flex items-center justify-between h-16 px-4 lg:px-6">
         <!-- Left Side -->
         <div class="flex items-center space-x-4">
@@ -31,17 +31,18 @@
 
             <!-- Agent Status Indicator -->
             @auth
-            <div x-data="{ open: false, status: '{{ auth()->user()->agent_status ?? 'offline' }}' }" class="relative">
+            @php $defaultStatus = auth()->user()->agent_status ?? 'offline'; @endphp
+            <div x-data="{ open: false, status: '{{ $defaultStatus }}' }" class="relative">
                 <button @click="open = !open" class="flex items-center space-x-2 p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
                     <span class="relative flex h-3 w-3">
-                        <span class="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75"
+                        <span class="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 bg-{{ $defaultStatus === 'available' ? 'green' : ($defaultStatus === 'on_break' ? 'yellow' : ($defaultStatus === 'on_call' ? 'red' : 'gray')) }}-400"
                               :class="{
                                   'bg-green-400': status === 'available',
                                   'bg-yellow-400': status === 'on_break',
                                   'bg-red-400': status === 'on_call',
                                   'bg-gray-400': status === 'offline'
                               }"></span>
-                        <span class="relative inline-flex rounded-full h-3 w-3"
+                        <span class="relative inline-flex rounded-full h-3 w-3 bg-{{ $defaultStatus === 'available' ? 'green' : ($defaultStatus === 'on_break' ? 'yellow' : ($defaultStatus === 'on_call' ? 'red' : 'gray')) }}-500"
                               :class="{
                                   'bg-green-500': status === 'available',
                                   'bg-yellow-500': status === 'on_break',
@@ -49,14 +50,14 @@
                                   'bg-gray-500': status === 'offline'
                               }"></span>
                     </span>
-                    <span class="hidden sm:inline text-sm font-medium text-gray-700 dark:text-gray-300 capitalize" x-text="status.replace('_', ' ')"></span>
+                    <span class="hidden sm:inline text-sm font-medium text-gray-700 dark:text-gray-300 capitalize min-w-[4.5rem]" x-text="status.replace('_', ' ')">{{ str_replace('_', ' ', $defaultStatus) }}</span>
                     <svg class="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
                     </svg>
                 </button>
 
                 <!-- Status Dropdown -->
-                <div x-show="open" @click.away="open = false"
+                <div x-cloak="dropdown" x-show="open" @click.away="open = false"
                      x-transition:enter="transition ease-out duration-100"
                      x-transition:enter-start="transform opacity-0 scale-95"
                      x-transition:enter-end="transform opacity-100 scale-100"
@@ -90,10 +91,10 @@
 
             <!-- Dark Mode Toggle -->
             <button @click="darkMode = !darkMode" class="p-2 rounded-lg text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700">
-                <svg x-show="!darkMode" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg x-show="!darkMode" class="w-6 h-6 dark:hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/>
                 </svg>
-                <svg x-show="darkMode" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg x-show="darkMode" class="w-6 h-6 hidden dark:block" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/>
                 </svg>
             </button>
@@ -114,7 +115,7 @@
                 </button>
 
                 <!-- User Dropdown Menu -->
-                <div x-show="open" @click.away="open = false"
+                <div x-cloak="dropdown" x-show="open" @click.away="open = false"
                      x-transition:enter="transition ease-out duration-100"
                      x-transition:enter-start="transform opacity-0 scale-95"
                      x-transition:enter-end="transform opacity-100 scale-100"
@@ -139,7 +140,8 @@
                         My Callbacks
                     </a>
                     <div class="border-t border-gray-200 dark:border-gray-700 mt-1 pt-1">
-                        <form method="POST" action="{{ route('logout') }}">
+                        <form method="POST" action="{{ route('logout') }}" id="logout-form" 
+                              onsubmit="if(window.phoneSync){window.phoneSync.broadcastLogout()}">
                             @csrf
                             <button type="submit" class="w-full text-left px-4 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-gray-100 dark:hover:bg-gray-700">
                                 <svg class="inline w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">

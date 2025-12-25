@@ -17,6 +17,25 @@
     </x-slot>
 
     <div class="max-w-3xl mx-auto">
+        <!-- Validation Errors -->
+        @if($errors->any())
+            <div class="mb-6 p-4 bg-red-50 dark:bg-red-900/20 rounded-xl border border-red-200 dark:border-red-800">
+                <div class="flex">
+                    <svg class="w-5 h-5 text-red-600 dark:text-red-400 mr-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                    <div>
+                        <h4 class="text-sm font-medium text-red-800 dark:text-red-200">Please fix the following errors:</h4>
+                        <ul class="mt-2 text-sm text-red-700 dark:text-red-300 list-disc list-inside">
+                            @foreach($errors->all() as $error)
+                                <li>{{ $error }}</li>
+                            @endforeach
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        @endif
+
         <form action="{{ route('carriers.store') }}" method="POST" class="space-y-6">
             @csrf
 
@@ -38,11 +57,13 @@
 
                         <div>
                             <label for="type" class="form-label">Carrier Type <span class="text-red-500">*</span></label>
-                            <select name="type" id="type" class="form-select" required>
+                            <select name="type" id="type" class="form-select @error('type') border-red-500 @enderror" required>
                                 <option value="outbound" {{ old('type') === 'outbound' ? 'selected' : '' }}>Outbound</option>
                                 <option value="inbound" {{ old('type') === 'inbound' ? 'selected' : '' }}>Inbound</option>
-                                <option value="both" {{ old('type') === 'both' ? 'selected' : '' }}>Both</option>
                             </select>
+                            @error('type')
+                                <p class="form-error">{{ $message }}</p>
+                            @enderror
                         </div>
                     </div>
 
@@ -58,9 +79,37 @@
                         </div>
 
                         <div>
-                            <label for="port" class="form-label">Port</label>
+                            <label for="port" class="form-label">Port <span class="text-red-500">*</span></label>
                             <input type="number" name="port" id="port" value="{{ old('port', 5060) }}" 
-                                   class="form-input" min="1" max="65535">
+                                   class="form-input @error('port') border-red-500 @enderror" min="1" max="65535" required>
+                            @error('port')
+                                <p class="form-error">{{ $message }}</p>
+                            @enderror
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                            <label for="transport" class="form-label">Transport Protocol <span class="text-red-500">*</span></label>
+                            <select name="transport" id="transport" class="form-select @error('transport') border-red-500 @enderror" required>
+                                <option value="udp" {{ old('transport', 'udp') === 'udp' ? 'selected' : '' }}>UDP</option>
+                                <option value="tcp" {{ old('transport') === 'tcp' ? 'selected' : '' }}>TCP</option>
+                                <option value="tls" {{ old('transport') === 'tls' ? 'selected' : '' }}>TLS</option>
+                            </select>
+                            @error('transport')
+                                <p class="form-error">{{ $message }}</p>
+                            @enderror
+                        </div>
+
+                        <div>
+                            <label for="auth_type" class="form-label">Authentication Type <span class="text-red-500">*</span></label>
+                            <select name="auth_type" id="auth_type" class="form-select @error('auth_type') border-red-500 @enderror" required>
+                                <option value="ip" {{ old('auth_type', 'ip') === 'ip' ? 'selected' : '' }}>IP Based</option>
+                                <option value="registration" {{ old('auth_type') === 'registration' ? 'selected' : '' }}>Registration</option>
+                            </select>
+                            @error('auth_type')
+                                <p class="form-error">{{ $message }}</p>
+                            @enderror
                         </div>
                     </div>
 
@@ -80,26 +129,42 @@
 
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div>
-                            <label for="transport" class="form-label">Transport Protocol</label>
-                            <select name="transport" id="transport" class="form-select">
-                                <option value="udp" {{ old('transport', 'udp') === 'udp' ? 'selected' : '' }}>UDP</option>
-                                <option value="tcp" {{ old('transport') === 'tcp' ? 'selected' : '' }}>TCP</option>
-                                <option value="tls" {{ old('transport') === 'tls' ? 'selected' : '' }}>TLS</option>
-                            </select>
+                            <label for="from_domain" class="form-label">From Domain</label>
+                            <input type="text" name="from_domain" id="from_domain" value="{{ old('from_domain') }}" 
+                                   class="form-input" placeholder="e.g., sip.example.com">
                         </div>
 
                         <div>
-                            <label for="priority" class="form-label">Priority</label>
-                            <input type="number" name="priority" id="priority" value="{{ old('priority', 1) }}" 
-                                   class="form-input" min="1" max="100">
-                            <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Lower number = higher priority</p>
+                            <label for="from_user" class="form-label">From User</label>
+                            <input type="text" name="from_user" id="from_user" value="{{ old('from_user') }}" 
+                                   class="form-input" placeholder="e.g., caller">
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                            <label for="context" class="form-label">Asterisk Context <span class="text-red-500">*</span></label>
+                            <input type="text" name="context" id="context" value="{{ old('context', 'from-trunk') }}" 
+                                   class="form-input @error('context') border-red-500 @enderror" 
+                                   placeholder="e.g., from-trunk" required>
+                            @error('context')
+                                <p class="form-error">{{ $message }}</p>
+                            @enderror
+                        </div>
+
+                        <div>
+                            <label for="max_channels" class="form-label">Max Channels</label>
+                            <input type="number" name="max_channels" id="max_channels" value="{{ old('max_channels') }}" 
+                                   class="form-input" min="1" placeholder="Unlimited">
+                            <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Leave empty for unlimited</p>
                         </div>
                     </div>
 
                     <div>
-                        <label for="caller_id" class="form-label">Default Caller ID</label>
-                        <input type="text" name="caller_id" id="caller_id" value="{{ old('caller_id') }}" 
-                               class="form-input" placeholder="e.g., +15551234567">
+                        <label for="priority" class="form-label">Priority</label>
+                        <input type="number" name="priority" id="priority" value="{{ old('priority', 1) }}" 
+                               class="form-input" min="0" max="100">
+                        <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Lower number = higher priority (0-100)</p>
                     </div>
 
                     <div class="flex items-center">
@@ -125,4 +190,3 @@
         </form>
     </div>
 </x-app-layout>
-
