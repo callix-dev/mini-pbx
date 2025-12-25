@@ -10,8 +10,8 @@ use App\Events\QueueUpdated;
 use App\Models\CallLog;
 use App\Models\Extension;
 use App\Models\Queue;
-use App\Models\SystemSetting;
 use App\Models\User;
+use App\Services\SettingsService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 
@@ -31,11 +31,12 @@ class AmiListener extends Command
     {
         $this->info('Starting AMI Listener...');
 
-        // Use config first, fall back to SystemSetting
-        $host = config('asterisk.ami.host') ?: SystemSetting::get('ami_host', '127.0.0.1');
-        $port = (int) (config('asterisk.ami.port') ?: SystemSetting::get('ami_port', 5038));
-        $username = config('asterisk.ami.username') ?: SystemSetting::get('ami_username', 'admin');
-        $secret = config('asterisk.ami.password') ?: SystemSetting::get('ami_secret', '');
+        // Use SettingsService for hybrid DB/ENV settings
+        $settings = SettingsService::getAmiSettings();
+        $host = $settings['host'];
+        $port = $settings['port'];
+        $username = $settings['username'];
+        $secret = $settings['password'];
 
         while ($this->reconnectAttempts < self::MAX_RECONNECT_ATTEMPTS) {
             try {

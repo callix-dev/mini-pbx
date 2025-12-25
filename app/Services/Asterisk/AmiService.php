@@ -2,7 +2,7 @@
 
 namespace App\Services\Asterisk;
 
-use App\Models\SystemSetting;
+use App\Services\SettingsService;
 use Illuminate\Support\Facades\Log;
 
 class AmiService
@@ -16,10 +16,13 @@ class AmiService
 
     public function __construct()
     {
-        $this->host = SystemSetting::get('host', '127.0.0.1', 'ami');
-        $this->port = (int) SystemSetting::get('port', 5038, 'ami');
-        $this->username = SystemSetting::get('username', 'admin', 'ami');
-        $this->password = SystemSetting::get('password', '', 'ami');
+        // Use SettingsService for hybrid DB/ENV settings
+        $settings = SettingsService::getAmiSettings();
+        
+        $this->host = $settings['host'];
+        $this->port = $settings['port'];
+        $this->username = $settings['username'];
+        $this->password = $settings['password'];
     }
 
     public function connect(): bool

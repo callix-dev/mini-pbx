@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Services\SettingsService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -41,6 +42,9 @@ class WebPhoneController extends Controller
             $wssServer = 'wss://' . $request->getHost() . '/ws';
         }
 
+        // Get WebRTC settings (STUN/TURN) from SettingsService (DB -> ENV fallback)
+        $webrtcSettings = SettingsService::getWebRtcSettings();
+
         return response()->json([
             'success' => true,
             'credentials' => [
@@ -50,6 +54,12 @@ class WebPhoneController extends Controller
                 'caller_id' => $extension->caller_id_number ?? $extension->extension,
                 'wss_server' => $wssServer,
                 'realm' => config('webphone.realm', $request->getHost()),
+            ],
+            'webrtc' => [
+                'stun_server' => $webrtcSettings['stun_server'],
+                'turn_server' => $webrtcSettings['turn_server'],
+                'turn_username' => $webrtcSettings['turn_username'],
+                'turn_credential' => $webrtcSettings['turn_credential'],
             ],
             'user' => [
                 'id' => $user->id,

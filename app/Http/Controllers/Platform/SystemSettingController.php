@@ -7,6 +7,7 @@ use App\Models\SystemSetting;
 use App\Models\AuditLog;
 use App\Services\Asterisk\AmiService;
 use App\Services\Asterisk\AriService;
+use App\Services\SettingsService;
 use Illuminate\Http\Request;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\JsonResponse;
@@ -84,6 +85,9 @@ class SystemSettingController extends Controller
 
             SystemSetting::set($key, $value, $group, $type, $isEncrypted);
         }
+
+        // Clear settings cache so new values take effect
+        SettingsService::clearCache();
 
         AuditLog::log('settings_changed', null, null, null, 'System settings updated');
 

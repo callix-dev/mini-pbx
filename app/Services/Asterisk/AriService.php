@@ -2,7 +2,7 @@
 
 namespace App\Services\Asterisk;
 
-use App\Models\SystemSetting;
+use App\Services\SettingsService;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -14,12 +14,12 @@ class AriService
 
     public function __construct()
     {
-        $host = SystemSetting::get('host', '127.0.0.1', 'ari');
-        $port = SystemSetting::get('port', 8088, 'ari');
-        $this->username = SystemSetting::get('username', 'admin', 'ari');
-        $this->password = SystemSetting::get('password', '', 'ari');
+        // Use SettingsService for hybrid DB/ENV settings
+        $settings = SettingsService::getAriSettings();
         
-        $this->baseUrl = "http://{$host}:{$port}/ari";
+        $this->username = $settings['username'];
+        $this->password = $settings['password'];
+        $this->baseUrl = $settings['url'];
     }
 
     protected function request(string $method, string $endpoint, array $data = []): array
