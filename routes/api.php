@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\ExtensionStatusController;
 use App\Http\Controllers\Api\WebPhoneController;
 use Illuminate\Http\Request;
@@ -61,5 +62,19 @@ Route::middleware(['web', 'auth'])->prefix('extensions')->group(function () {
     
     // Sync all statuses from Asterisk
     Route::post('/sync-status', [ExtensionStatusController::class, 'sync']);
+});
+
+/*
+|--------------------------------------------------------------------------
+| Dashboard API Routes
+|--------------------------------------------------------------------------
+|
+| Real-time dashboard statistics
+|
+*/
+
+Route::middleware(['web', 'auth'])->prefix('dashboard')->group(function () {
+    // Get dashboard stats (active calls, extensions, etc.)
+    Route::get('/stats', [DashboardController::class, 'stats']);
 });
 

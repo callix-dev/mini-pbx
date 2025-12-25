@@ -361,9 +361,12 @@
                     document.getElementById('active-calls-count').textContent = this.activeCalls;
                 });
 
-                // Poll for live extension status every 10 seconds
+                // Poll for live extension status every 5 seconds
                 this.pollExtensionStatus();
-                setInterval(() => this.pollExtensionStatus(), 10000);
+                setInterval(() => this.pollExtensionStatus(), 5000);
+
+                // Refresh full dashboard data every 5 seconds
+                setInterval(() => this.refreshDashboard(), 5000);
             },
             
             updateExtensionCount(data) {
@@ -421,6 +424,29 @@
                     
                 } catch (error) {
                     console.log('Failed to poll extension status:', error);
+                }
+            },
+
+            async refreshDashboard() {
+                try {
+                    const response = await fetch('/api/dashboard/stats');
+                    if (!response.ok) return;
+                    
+                    const data = await response.json();
+                    if (!data.success) return;
+
+                    // Update stats cards
+                    document.getElementById('active-calls-count').textContent = data.stats.active_calls;
+                    document.getElementById('live-calls-badge').textContent = data.stats.active_calls + ' Active';
+                    
+                    // Update today's calls if element exists
+                    const todaysCallsEl = document.querySelector('[data-stat="todays-calls"]');
+                    if (todaysCallsEl) {
+                        todaysCallsEl.textContent = data.stats.todays_calls;
+                    }
+
+                } catch (error) {
+                    console.log('Failed to refresh dashboard:', error);
                 }
             }
         }

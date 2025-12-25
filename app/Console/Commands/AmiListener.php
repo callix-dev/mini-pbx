@@ -163,6 +163,9 @@ class AmiListener extends Command
             'ContactStatus' => $this->handleContactStatus($event),
             'PeerStatus' => $this->handlePeerStatus($event),
             'ContactStatusDetail' => $this->handleContactStatusDetail($event),
+            // Dial events for ringing status
+            'DialBegin' => $this->handleDial($event),
+            'DialEnd' => $this->handleDial($event),
             default => null,
         };
     }
@@ -184,7 +187,8 @@ class AmiListener extends Command
         if (str_starts_with($context ?? '', 'from-trunk')) {
             $type = 'inbound';
         } elseif (str_starts_with($context ?? '', 'from-internal')) {
-            $type = 'outbound';
+            // from-internal means an extension is calling out
+            $type = 'internal'; // Could be internal or outbound depending on destination
         }
 
         $this->activeCalls[$uniqueId] = [
@@ -195,6 +199,16 @@ class AmiListener extends Command
             'type' => $type,
             'started_at' => now(),
         ];
+
+        // Update extension status to on_call
+        $extension = Extension::where('extension', $callerId)->first();
+        if ($extension && $extension->status !== 'on_call') {
+            $extension->status = 'on_call';
+            $extension->saveQuietly();
+            
+            // Broadcast status change
+            broadcast(new ExtensionStatusChanged($extension->id, $extension->extension, 'online', 'on_call'));
+        }
 
         broadcast(new CallStarted($this->activeCalls[$uniqueId]));
     }
@@ -231,19 +245,47 @@ class AmiListener extends Command
 
         // Save call log
         try {
+            // Find extension_id from caller
+            $extension = Extension::where('extension', $call['caller_id'])->first();
+            $calleeExtension = Extension::where('extension', $call['destination'])->first();
+
             CallLog::create([
-                'unique_id' => $uniqueId,
-                'source' => $call['caller_id'],
-                'destination' => $call['destination'],
+                'uniqueid' => $uniqueId,
+                'linkedid' => $uniqueId,
                 'type' => $call['type'],
+                'direction' => $call['type'] === 'inbound' ? 'inbound' : 'outbound',
+                'caller_id' => $call['caller_id'],
+                'caller_name' => $extension?->name ?? $call['caller_id'],
+                'callee_id' => $call['destination'],
+                'callee_name' => $calleeExtension?->name ?? $call['destination'],
+                'extension_id' => $extension?->id,
                 'status' => $status,
+                'start_time' => $call['started_at'],
+                'answer_time' => $status === 'answered' ? $call['started_at'] : null,
+                'end_time' => now(),
                 'duration' => $duration,
+                'billable_duration' => $status === 'answered' ? $duration : 0,
                 'hangup_cause' => $cause,
-                'started_at' => $call['started_at'],
-                'ended_at' => now(),
             ]);
+            
+            if ($this->option('debug')) {
+                $this->info("Call logged: {$call['caller_id']} -> {$call['destination']} ({$status}, {$duration}s)");
+            }
+
+            // Reset extension status to online (they're still registered)
+            if ($extension && $extension->status === 'on_call') {
+                $extension->status = 'online';
+                $extension->saveQuietly();
+                broadcast(new ExtensionStatusChanged($extension->id, $extension->extension, 'on_call', 'online'));
+            }
+            if ($calleeExtension && $calleeExtension->status === 'on_call') {
+                $calleeExtension->status = 'online';
+                $calleeExtension->saveQuietly();
+                broadcast(new ExtensionStatusChanged($calleeExtension->id, $calleeExtension->extension, 'on_call', 'online'));
+            }
+
         } catch (\Exception $e) {
-            Log::error('Failed to save call log', ['error' => $e->getMessage()]);
+            Log::error('Failed to save call log', ['error' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
         }
 
         unset($this->activeCalls[$uniqueId]);
@@ -256,7 +298,44 @@ class AmiListener extends Command
 
     private function handleDial(array $event): void
     {
-        // Handle dial events
+        $subEvent = $event['SubEvent'] ?? $event['DialStatus'] ?? null;
+        $destChannel = $event['DestChannel'] ?? $event['Destination'] ?? null;
+        
+        if (!$destChannel) {
+            return;
+        }
+
+        // Extract extension from channel (e.g., "PJSIP/1001-00000005" -> "1001")
+        if (preg_match('/PJSIP\/(\d+)/', $destChannel, $matches)) {
+            $destExtension = $matches[1];
+            $extension = Extension::where('extension', $destExtension)->first();
+            
+            if ($extension) {
+                if ($subEvent === 'Begin' || $event['Event'] === 'DialBegin') {
+                    // Set ringing status
+                    if ($extension->status !== 'on_call') {
+                        $previousStatus = $extension->status;
+                        $extension->status = 'ringing';
+                        $extension->saveQuietly();
+                        broadcast(new ExtensionStatusChanged($extension->id, $extension->extension, $previousStatus, 'ringing'));
+                    }
+                } elseif ($subEvent === 'End' || $event['Event'] === 'DialEnd') {
+                    $dialStatus = $event['DialStatus'] ?? '';
+                    
+                    if ($dialStatus === 'ANSWER') {
+                        // Call answered - set to on_call
+                        $extension->status = 'on_call';
+                        $extension->saveQuietly();
+                        broadcast(new ExtensionStatusChanged($extension->id, $extension->extension, 'ringing', 'on_call'));
+                    } else {
+                        // Call not answered - reset to online
+                        $extension->status = 'online';
+                        $extension->saveQuietly();
+                        broadcast(new ExtensionStatusChanged($extension->id, $extension->extension, 'ringing', 'online'));
+                    }
+                }
+            }
+        }
     }
 
     private function handleAgentLogin(array $event): void
