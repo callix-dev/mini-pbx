@@ -489,16 +489,29 @@ class Softphone {
      * Mute/unmute the call
      */
     mute(muted = true) {
-        if (!this.simpleUser) return;
+        if (!this.simpleUser) {
+            console.warn('Softphone: Cannot mute - no simpleUser');
+            return false;
+        }
         
         try {
             if (muted) {
                 this.simpleUser.mute();
+                console.log('Softphone: Muted');
             } else {
                 this.simpleUser.unmute();
+                console.log('Softphone: Unmuted');
             }
+            
+            // Dispatch state change
+            this.dispatchEvent('statechange', { 
+                isMuted: muted 
+            });
+            
+            return true;
         } catch (error) {
             console.error('Softphone: Mute failed', error);
+            return false;
         }
     }
 
@@ -506,16 +519,29 @@ class Softphone {
      * Hold/unhold the call
      */
     async hold(held = true) {
-        if (!this.simpleUser) return;
+        if (!this.simpleUser) {
+            console.warn('Softphone: Cannot hold - no simpleUser');
+            return false;
+        }
         
         try {
             if (held) {
                 await this.simpleUser.hold();
+                console.log('Softphone: On hold');
             } else {
                 await this.simpleUser.unhold();
+                console.log('Softphone: Resumed');
             }
+            
+            // Dispatch state change
+            this.dispatchEvent('statechange', { 
+                isOnHold: held 
+            });
+            
+            return true;
         } catch (error) {
             console.error('Softphone: Hold failed', error);
+            return false;
         }
     }
 
