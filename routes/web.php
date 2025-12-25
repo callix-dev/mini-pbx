@@ -123,7 +123,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         // Hold Music
         Route::resource('hold-music', HoldMusicController::class);
         Route::post('hold-music/{holdMusic}/files', [HoldMusicController::class, 'uploadFile'])->name('hold-music.upload-file');
-        Route::delete('hold-music/{holdMusic}/files/{file}', [HoldMusicController::class, 'deleteFile'])->name('hold-music.delete-file');
+        Route::delete('hold-music/{holdMusic}/files/{holdMusicFile}', [HoldMusicController::class, 'deleteFile'])->name('hold-music.delete-file');
 
         // Soundboards
         Route::resource('soundboards', SoundboardController::class);
