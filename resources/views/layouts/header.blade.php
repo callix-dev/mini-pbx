@@ -375,9 +375,9 @@ function agentStatus(initialStatus) {
         pollInterval: null,
 
         init() {
-            // Poll status every 5 seconds
+            // Poll status every 2 seconds
             this.pollStatus();
-            this.pollInterval = setInterval(() => this.pollStatus(), 5000);
+            this.pollInterval = setInterval(() => this.pollStatus(), 2000);
             
             // Listen for incoming calls
             this.listenForCalls();
