@@ -34,7 +34,8 @@
 
         <!-- Critical CSS to prevent flash - MUST load before anything else -->
         <style>
-            /* Hide dropdown/modal elements until Alpine initializes */
+            /* Hide all x-cloak elements until Alpine initializes */
+            [x-cloak] { display: none !important; }
             [x-cloak="dropdown"] { display: none !important; }
             
             /* Background colors */
