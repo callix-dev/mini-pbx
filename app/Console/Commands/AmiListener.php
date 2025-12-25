@@ -343,6 +343,11 @@ class AmiListener extends Command
         $startTime = $event['StartTime'] ?? null;
         $answerTime = $event['AnswerTime'] ?? null;
         $endTime = $event['EndTime'] ?? null;
+        
+        // Recording path - can be in UserField, AccountCode, or constructed from UniqueID
+        $userField = $event['UserField'] ?? '';
+        $accountCode = $event['AccountCode'] ?? '';
+        $recordingPath = $this->resolveRecordingPath($uniqueId, $userField, $accountCode);
 
         if (!$uniqueId || !$source) {
             return;
@@ -388,7 +393,7 @@ class AmiListener extends Command
                 return;
             }
 
-            CallLog::create([
+            $callLog = CallLog::create([
                 'uniqueid' => $uniqueId,
                 'linkedid' => $linkedId,
                 'type' => $type,
@@ -405,9 +410,11 @@ class AmiListener extends Command
                 'duration' => $duration,
                 'billable_duration' => $billSec,
                 'hangup_cause' => $disposition,
+                'recording_path' => $recordingPath,
             ]);
 
-            $this->info("CDR Logged: {$source} -> {$destination} ({$status}, {$duration}s)");
+            $recordingInfo = $recordingPath ? " [Recording: {$recordingPath}]" : '';
+            $this->info("CDR Logged: {$source} -> {$destination} ({$status}, {$duration}s){$recordingInfo}");
 
         } catch (\Exception $e) {
             Log::error('Failed to save CDR', [
@@ -418,6 +425,62 @@ class AmiListener extends Command
             ]);
             $this->error("CDR Save Error: " . $e->getMessage());
         }
+    }
+
+    /**
+     * Resolve recording path from CDR event data
+     * Asterisk can store recording path in UserField or we construct it from UniqueID
+     */
+    private function resolveRecordingPath(?string $uniqueId, string $userField, string $accountCode): ?string
+    {
+        // Get configured recording directory
+        $recordingDir = config('asterisk.recordings.path', '/var/spool/asterisk/monitor');
+        
+        // 1. Check UserField first (MixMonitor typically sets this)
+        if (!empty($userField)) {
+            // UserField might contain just filename or full path
+            if (str_starts_with($userField, '/')) {
+                // Full path provided
+                if (file_exists($userField)) {
+                    return $userField;
+                }
+            } else {
+                // Just filename, construct full path
+                $fullPath = "{$recordingDir}/{$userField}";
+                if (file_exists($fullPath)) {
+                    return $fullPath;
+                }
+            }
+        }
+        
+        // 2. Check AccountCode (sometimes used for recording filename)
+        if (!empty($accountCode) && str_contains($accountCode, '.wav')) {
+            $fullPath = "{$recordingDir}/{$accountCode}";
+            if (file_exists($fullPath)) {
+                return $fullPath;
+            }
+        }
+        
+        // 3. Try standard naming conventions based on UniqueID
+        if ($uniqueId) {
+            $possibleNames = [
+                "{$uniqueId}.wav",
+                "{$uniqueId}.mp3",
+                "{$uniqueId}.gsm",
+                // Date-based subdirectory format
+                date('Y/m/d') . "/{$uniqueId}.wav",
+                date('Y/m/d') . "/{$uniqueId}.mp3",
+            ];
+            
+            foreach ($possibleNames as $name) {
+                $fullPath = "{$recordingDir}/{$name}";
+                if (file_exists($fullPath)) {
+                    return $fullPath;
+                }
+            }
+        }
+        
+        return null;
     }
 
     private function handleBridge(array $event): void

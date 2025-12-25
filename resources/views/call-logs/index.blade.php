@@ -80,9 +80,10 @@
                         <th>Type</th>
                         <th>From</th>
                         <th>To</th>
-                        <th>Agent</th>
+                        <th>Extension</th>
                         <th>Duration</th>
                         <th>Status</th>
+                        <th class="text-center">Recording</th>
                         <th>Disposition</th>
                         <th>Date/Time</th>
                         <th class="text-right">Actions</th>
@@ -156,6 +157,22 @@
                                     {{ ucfirst($call->status) }}
                                 </span>
                             </td>
+                            <td class="text-center">
+                                @if($call->recording_path)
+                                    <button 
+                                        type="button"
+                                        onclick="playInlineRecording('{{ route('call-logs.play-recording', $call) }}', this)"
+                                        class="inline-flex items-center px-2 py-1 text-xs font-medium text-green-700 bg-green-100 rounded-full hover:bg-green-200 dark:text-green-400 dark:bg-green-900/30 dark:hover:bg-green-900/50 transition-colors"
+                                        title="Click to play">
+                                        <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 24 24">
+                                            <path d="M8 5v14l11-7z"/>
+                                        </svg>
+                                        Play
+                                    </button>
+                                @else
+                                    <span class="text-gray-400 dark:text-gray-600">—</span>
+                                @endif
+                            </td>
                             <td>
                                 @if($call->disposition)
                                     <span class="badge badge-primary">{{ $call->disposition->name }}</span>
@@ -191,7 +208,7 @@
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="9" class="text-center py-12">
+                            <td colspan="10" class="text-center py-12">
                                 <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/>
                                 </svg>
@@ -210,5 +227,156 @@
             </div>
         @endif
     </div>
+
+    <!-- Inline Audio Player (floating) -->
+    <div id="inlineAudioPlayer" class="fixed bottom-20 left-1/2 transform -translate-x-1/2 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 p-4 hidden z-50 min-w-[400px]">
+        <div class="flex items-center space-x-4">
+            <button type="button" onclick="togglePlayPause()" class="flex-shrink-0 w-10 h-10 bg-primary-600 hover:bg-primary-700 text-white rounded-full flex items-center justify-center transition-colors">
+                <svg id="playIcon" class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M8 5v14l11-7z"/>
+                </svg>
+                <svg id="pauseIcon" class="w-5 h-5 hidden" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M6 4h4v16H6zM14 4h4v16h-4z"/>
+                </svg>
+            </button>
+            <div class="flex-1">
+                <div class="flex items-center space-x-2 text-xs text-gray-500 dark:text-gray-400 mb-1">
+                    <span id="currentTime">0:00</span>
+                    <span>/</span>
+                    <span id="duration">0:00</span>
+                </div>
+                <input type="range" id="progressBar" min="0" max="100" value="0" 
+                       class="w-full h-1 bg-gray-200 dark:bg-gray-700 rounded-full appearance-none cursor-pointer accent-primary-600"
+                       onchange="seekAudio(this.value)">
+            </div>
+            <button type="button" onclick="closeInlinePlayer()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                </svg>
+            </button>
+        </div>
+        <audio id="audioElement" class="hidden"></audio>
+    </div>
+
+    @push('scripts')
+    <script>
+        let currentButton = null;
+        const audioElement = document.getElementById('audioElement');
+        const playerContainer = document.getElementById('inlineAudioPlayer');
+        const playIcon = document.getElementById('playIcon');
+        const pauseIcon = document.getElementById('pauseIcon');
+        const progressBar = document.getElementById('progressBar');
+        const currentTimeEl = document.getElementById('currentTime');
+        const durationEl = document.getElementById('duration');
+
+        function formatTime(seconds) {
+            const mins = Math.floor(seconds / 60);
+            const secs = Math.floor(seconds % 60);
+            return `${mins}:${secs.toString().padStart(2, '0')}`;
+        }
+
+        function playInlineRecording(url, button) {
+            // Reset previous button
+            if (currentButton && currentButton !== button) {
+                currentButton.innerHTML = `
+                    <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M8 5v14l11-7z"/>
+                    </svg>
+                    Play
+                `;
+            }
+
+            // If same button, toggle play/pause
+            if (currentButton === button && !audioElement.paused) {
+                audioElement.pause();
+                return;
+            }
+
+            currentButton = button;
+            audioElement.src = url;
+            playerContainer.classList.remove('hidden');
+            audioElement.play();
+
+            button.innerHTML = `
+                <svg class="w-3 h-3 mr-1 animate-pulse" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M6 4h4v16H6zM14 4h4v16h-4z"/>
+                </svg>
+                Playing
+            `;
+        }
+
+        function togglePlayPause() {
+            if (audioElement.paused) {
+                audioElement.play();
+            } else {
+                audioElement.pause();
+            }
+        }
+
+        function closeInlinePlayer() {
+            audioElement.pause();
+            audioElement.src = '';
+            playerContainer.classList.add('hidden');
+            if (currentButton) {
+                currentButton.innerHTML = `
+                    <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M8 5v14l11-7z"/>
+                    </svg>
+                    Play
+                `;
+                currentButton = null;
+            }
+        }
+
+        function seekAudio(value) {
+            if (audioElement.duration) {
+                audioElement.currentTime = (value / 100) * audioElement.duration;
+            }
+        }
+
+        audioElement.addEventListener('play', () => {
+            playIcon.classList.add('hidden');
+            pauseIcon.classList.remove('hidden');
+        });
+
+        audioElement.addEventListener('pause', () => {
+            playIcon.classList.remove('hidden');
+            pauseIcon.classList.add('hidden');
+            if (currentButton) {
+                currentButton.innerHTML = `
+                    <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M8 5v14l11-7z"/>
+                    </svg>
+                    Play
+                `;
+            }
+        });
+
+        audioElement.addEventListener('timeupdate', () => {
+            if (audioElement.duration) {
+                const progress = (audioElement.currentTime / audioElement.duration) * 100;
+                progressBar.value = progress;
+                currentTimeEl.textContent = formatTime(audioElement.currentTime);
+            }
+        });
+
+        audioElement.addEventListener('loadedmetadata', () => {
+            durationEl.textContent = formatTime(audioElement.duration);
+        });
+
+        audioElement.addEventListener('ended', () => {
+            progressBar.value = 0;
+            currentTimeEl.textContent = '0:00';
+            if (currentButton) {
+                currentButton.innerHTML = `
+                    <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M8 5v14l11-7z"/>
+                    </svg>
+                    Play
+                `;
+            }
+        });
+    </script>
+    @endpush
 </x-app-layout>
 

@@ -65,19 +65,37 @@
                         </div>
                         <div>
                             <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">From</dt>
-                            <dd class="mt-1 text-lg font-mono font-bold text-gray-900 dark:text-white">{{ $callLog->source }}</dd>
+                            <dd class="mt-1">
+                                <span class="text-lg font-mono font-bold text-gray-900 dark:text-white">{{ $callLog->caller_id }}</span>
+                                @if($callLog->caller_name && $callLog->caller_name !== $callLog->caller_id)
+                                    <span class="text-sm text-gray-500 dark:text-gray-400 block">{{ $callLog->caller_name }}</span>
+                                @endif
+                            </dd>
                         </div>
                         <div>
                             <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">To</dt>
-                            <dd class="mt-1 text-lg font-mono font-bold text-gray-900 dark:text-white">{{ $callLog->destination }}</dd>
+                            <dd class="mt-1">
+                                <span class="text-lg font-mono font-bold text-gray-900 dark:text-white">{{ $callLog->callee_id }}</span>
+                                @if($callLog->callee_name && $callLog->callee_name !== $callLog->callee_id)
+                                    <span class="text-sm text-gray-500 dark:text-gray-400 block">{{ $callLog->callee_name }}</span>
+                                @endif
+                            </dd>
                         </div>
                         <div>
                             <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">Duration</dt>
                             <dd class="mt-1 text-lg font-mono text-gray-900 dark:text-white">{{ gmdate('H:i:s', $callLog->duration) }}</dd>
                         </div>
                         <div>
-                            <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">Agent</dt>
-                            <dd class="mt-1 text-gray-900 dark:text-white">{{ $callLog->agent->name ?? 'N/A' }}</dd>
+                            <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">Extension</dt>
+                            <dd class="mt-1 text-gray-900 dark:text-white">
+                                @if($callLog->extension)
+                                    <a href="{{ route('extensions.show', $callLog->extension) }}" class="text-primary-600 hover:underline">
+                                        {{ $callLog->extension->name }} ({{ $callLog->extension->extension }})
+                                    </a>
+                                @else
+                                    N/A
+                                @endif
+                            </dd>
                         </div>
                         @if($callLog->queue)
                             <div>

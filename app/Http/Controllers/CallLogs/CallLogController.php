@@ -124,19 +124,25 @@ class CallLogController extends Controller
             abort(404, 'Recording not found');
         }
 
-        $path = $callLog->recording_path;
+        $path = $this->resolveRecordingPath($callLog->recording_path);
 
-        // Handle both local and external paths
-        if (!file_exists($path)) {
-            $path = storage_path('app/' . $path);
-        }
-
-        if (!file_exists($path)) {
+        if (!$path || !file_exists($path)) {
             abort(404, 'Recording file not found');
         }
 
+        // Detect content type based on extension
+        $extension = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+        $contentType = match($extension) {
+            'mp3' => 'audio/mpeg',
+            'wav' => 'audio/wav',
+            'gsm' => 'audio/gsm',
+            'ogg' => 'audio/ogg',
+            default => 'audio/wav',
+        };
+
         return response()->file($path, [
-            'Content-Type' => 'audio/wav',
+            'Content-Type' => $contentType,
+            'Accept-Ranges' => 'bytes', // Enable seeking in audio player
         ]);
     }
 
@@ -146,19 +152,54 @@ class CallLogController extends Controller
             abort(404, 'Recording not found');
         }
 
-        $path = $callLog->recording_path;
+        $path = $this->resolveRecordingPath($callLog->recording_path);
 
-        if (!file_exists($path)) {
-            $path = storage_path('app/' . $path);
-        }
-
-        if (!file_exists($path)) {
+        if (!$path || !file_exists($path)) {
             abort(404, 'Recording file not found');
         }
 
-        $filename = "recording_{$callLog->uniqueid}_" . date('Y-m-d_His', strtotime($callLog->start_time)) . '.wav';
+        $extension = pathinfo($path, PATHINFO_EXTENSION) ?: 'wav';
+        $filename = "recording_{$callLog->uniqueid}_" . date('Y-m-d_His', strtotime($callLog->start_time)) . ".{$extension}";
 
         return response()->download($path, $filename);
+    }
+
+    /**
+     * Resolve recording path - checks multiple locations
+     */
+    private function resolveRecordingPath(string $recordingPath): ?string
+    {
+        // 1. Try as absolute path (direct from Asterisk)
+        if (str_starts_with($recordingPath, '/') && file_exists($recordingPath)) {
+            return $recordingPath;
+        }
+
+        // 2. Try in storage/app
+        $storagePath = storage_path('app/' . $recordingPath);
+        if (file_exists($storagePath)) {
+            return $storagePath;
+        }
+
+        // 3. Try in storage/app/recordings (symlinked from Asterisk)
+        $storageRecordingsPath = storage_path('app/recordings/' . basename($recordingPath));
+        if (file_exists($storageRecordingsPath)) {
+            return $storageRecordingsPath;
+        }
+
+        // 4. Try in configured Asterisk recording path
+        $asteriskPath = config('asterisk.recordings.path', '/var/spool/asterisk/monitor');
+        $fullPath = rtrim($asteriskPath, '/') . '/' . $recordingPath;
+        if (file_exists($fullPath)) {
+            return $fullPath;
+        }
+
+        // 5. Just try the filename in the Asterisk directory
+        $asteriskFilePath = rtrim($asteriskPath, '/') . '/' . basename($recordingPath);
+        if (file_exists($asteriskFilePath)) {
+            return $asteriskFilePath;
+        }
+
+        return null;
     }
 
     public function export(Request $request): StreamedResponse
