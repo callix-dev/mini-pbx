@@ -14,6 +14,7 @@ use App\Models\User;
 use App\Services\SettingsService;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
 class AmiListener extends Command
@@ -213,7 +214,32 @@ class AmiListener extends Command
             broadcast(new ExtensionStatusChanged($extension, 'online', 'on_call'));
         }
 
+        // Cache active call for dashboard
+        $this->cacheActiveCall($uniqueId, $this->activeCalls[$uniqueId]);
+
         broadcast(new CallStarted($this->activeCalls[$uniqueId]));
+    }
+
+    /**
+     * Cache active call for dashboard polling
+     */
+    private function cacheActiveCall(string $uniqueId, array $callData): void
+    {
+        $activeCalls = Cache::get('active_calls', []);
+        $activeCalls[$uniqueId] = array_merge($callData, [
+            'cached_at' => now()->toIso8601String(),
+        ]);
+        Cache::put('active_calls', $activeCalls, now()->addHours(2)); // Expire after 2 hours
+    }
+
+    /**
+     * Remove call from cache when ended
+     */
+    private function uncacheActiveCall(string $uniqueId): void
+    {
+        $activeCalls = Cache::get('active_calls', []);
+        unset($activeCalls[$uniqueId]);
+        Cache::put('active_calls', $activeCalls, now()->addHours(2));
     }
 
     private function handleHangup(array $event): void
@@ -291,6 +317,9 @@ class AmiListener extends Command
             Log::error('Failed to save call log', ['error' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
         }
 
+        // Remove from cache
+        $this->uncacheActiveCall($uniqueId);
+        
         unset($this->activeCalls[$uniqueId]);
     }
 

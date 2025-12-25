@@ -361,12 +361,12 @@
                     document.getElementById('active-calls-count').textContent = this.activeCalls;
                 });
 
-                // Poll for live extension status every 5 seconds
+                // Poll for live extension status every 2 seconds
                 this.pollExtensionStatus();
-                setInterval(() => this.pollExtensionStatus(), 5000);
+                setInterval(() => this.pollExtensionStatus(), 2000);
 
-                // Refresh full dashboard data every 5 seconds
-                setInterval(() => this.refreshDashboard(), 5000);
+                // Refresh full dashboard data every 2 seconds
+                setInterval(() => this.refreshDashboard(), 2000);
             },
             
             updateExtensionCount(data) {
@@ -436,6 +436,7 @@
                     if (!data.success) return;
 
                     // Update stats cards
+                    this.activeCalls = data.stats.active_calls;
                     document.getElementById('active-calls-count').textContent = data.stats.active_calls;
                     document.getElementById('live-calls-badge').textContent = data.stats.active_calls + ' Active';
                     
@@ -445,9 +446,86 @@
                         todaysCallsEl.textContent = data.stats.todays_calls;
                     }
 
+                    // Update active calls list
+                    this.updateActiveCallsList(data.active_calls);
+
+                    // Update recent calls if present
+                    if (data.recent_calls) {
+                        this.updateRecentCallsList(data.recent_calls);
+                    }
+
                 } catch (error) {
                     console.log('Failed to refresh dashboard:', error);
                 }
+            },
+
+            updateActiveCallsList(calls) {
+                const container = document.getElementById('active-calls-list');
+                if (!container) return;
+
+                if (!calls || calls.length === 0) {
+                    container.innerHTML = `
+                        <div class="text-center py-8 text-gray-500 dark:text-gray-400">
+                            <svg class="w-12 h-12 mx-auto mb-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/>
+                            </svg>
+                            <p class="font-medium">No active calls</p>
+                            <p class="text-sm">Calls will appear here in real-time</p>
+                        </div>
+                    `;
+                    return;
+                }
+
+                container.innerHTML = calls.map(call => `
+                    <div class="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-900/50 rounded-lg" id="call-${call.uniqueid}">
+                        <div class="flex items-center space-x-4">
+                            <div class="w-10 h-10 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center">
+                                <svg class="w-5 h-5 text-green-600 dark:text-green-400 animate-pulse" fill="currentColor" viewBox="0 0 20 20">
+                                    <path d="M2 3a1 1 0 011-1h2.153a1 1 0 01.986.836l.74 4.435a1 1 0 01-.54 1.06l-1.548.773a11.037 11.037 0 006.105 6.105l.774-1.548a1 1 0 011.059-.54l4.435.74a1 1 0 01.836.986V17a1 1 0 01-1 1h-2C7.82 18 2 12.18 2 5V3z"/>
+                                </svg>
+                            </div>
+                            <div>
+                                <p class="font-medium text-gray-900 dark:text-white">
+                                    ${call.caller_name || call.caller_id || 'Unknown'} 
+                                    <span class="text-gray-400">→</span> 
+                                    ${call.destination || 'Unknown'}
+                                </p>
+                                <p class="text-sm text-gray-500 dark:text-gray-400">
+                                    ${call.extension ? 'Agent: ' + call.extension.name : ''}
+                                    <span class="capitalize">${call.type}</span>
+                                </p>
+                            </div>
+                        </div>
+                        <div class="text-right">
+                            <p class="font-mono text-lg font-semibold text-green-600 dark:text-green-400">${call.formatted_duration || '00:00'}</p>
+                            <p class="text-xs text-gray-500 dark:text-gray-400 uppercase">Live</p>
+                        </div>
+                    </div>
+                `).join('');
+            },
+
+            updateRecentCallsList(calls) {
+                const container = document.getElementById('recent-calls-list');
+                if (!container || !calls || calls.length === 0) return;
+
+                container.innerHTML = calls.map(call => `
+                    <div class="flex items-center justify-between py-3 ${calls.indexOf(call) < calls.length - 1 ? 'border-b border-gray-200 dark:border-gray-700' : ''}">
+                        <div class="flex items-center space-x-3">
+                            <div class="w-8 h-8 rounded-full flex items-center justify-center ${
+                                call.status === 'answered' ? 'bg-green-100 dark:bg-green-900/30' : 'bg-red-100 dark:bg-red-900/30'
+                            }">
+                                <svg class="w-4 h-4 ${call.status === 'answered' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}" fill="currentColor" viewBox="0 0 20 20">
+                                    <path d="M2 3a1 1 0 011-1h2.153a1 1 0 01.986.836l.74 4.435a1 1 0 01-.54 1.06l-1.548.773a11.037 11.037 0 006.105 6.105l.774-1.548a1 1 0 011.059-.54l4.435.74a1 1 0 01.836.986V17a1 1 0 01-1 1h-2C7.82 18 2 12.18 2 5V3z"/>
+                                </svg>
+                            </div>
+                            <div>
+                                <p class="text-sm font-medium text-gray-900 dark:text-white">${call.caller_name || call.caller_id}</p>
+                                <p class="text-xs text-gray-500 dark:text-gray-400">${call.time_ago}</p>
+                            </div>
+                        </div>
+                        <span class="text-sm font-mono text-gray-600 dark:text-gray-400">${call.formatted_duration}</span>
+                    </div>
+                `).join('');
             }
         }
     }

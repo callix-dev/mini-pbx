@@ -7,7 +7,9 @@ use App\Models\CallLog;
 use App\Models\Extension;
 use App\Models\Queue;
 use App\Models\User;
+use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
 class DashboardController extends Controller
@@ -20,9 +22,18 @@ class DashboardController extends Controller
         // Sync extension status from Asterisk
         $this->syncExtensionStatus();
 
+        // Get active calls from cache (set by AMI listener)
+        $cachedActiveCalls = Cache::get('active_calls', []);
+        
+        // Filter out stale calls (older than 5 minutes without update)
+        $activeCalls = collect($cachedActiveCalls)->filter(function ($call) {
+            $cachedAt = Carbon::parse($call['cached_at'] ?? now());
+            return $cachedAt->diffInMinutes(now()) < 5;
+        });
+
         // Get statistics
         $stats = [
-            'active_calls' => CallLog::whereNull('end_time')->count(),
+            'active_calls' => $activeCalls->count(),
             'agents_online' => User::where('agent_status', '!=', 'offline')->count(),
             'agents_available' => User::where('agent_status', 'available')->count(),
             'extensions_online' => Extension::where('status', 'online')->count(),
@@ -31,25 +42,26 @@ class DashboardController extends Controller
             'todays_answered' => CallLog::today()->answered()->count(),
         ];
 
-        // Get active calls
-        $activeCalls = CallLog::with(['extension'])
-            ->whereNull('end_time')
-            ->orderBy('start_time', 'desc')
-            ->limit(10)
-            ->get()
-            ->map(fn($call) => [
-                'id' => $call->id,
-                'uniqueid' => $call->uniqueid,
-                'caller_id' => $call->caller_id,
-                'destination' => $call->destination,
-                'type' => $call->type,
-                'status' => $call->status,
-                'duration' => $call->start_time ? now()->diffInSeconds($call->start_time) : 0,
-                'extension' => $call->extension ? [
-                    'extension' => $call->extension->extension,
-                    'name' => $call->extension->name,
+        // Format active calls for display
+        $formattedActiveCalls = $activeCalls->map(function ($call) {
+            $startedAt = isset($call['started_at']) ? Carbon::parse($call['started_at']) : now();
+            $callerExt = Extension::where('extension', $call['caller_id'] ?? '')->first();
+            
+            return [
+                'uniqueid' => $call['unique_id'] ?? '',
+                'caller_id' => $call['caller_id'] ?? '',
+                'caller_name' => $callerExt?->name ?? $call['caller_id'] ?? '',
+                'destination' => $call['destination'] ?? '',
+                'type' => $call['type'] ?? 'internal',
+                'status' => 'active',
+                'duration' => $startedAt->diffInSeconds(now()),
+                'formatted_duration' => gmdate('i:s', $startedAt->diffInSeconds(now())),
+                'extension' => $callerExt ? [
+                    'extension' => $callerExt->extension,
+                    'name' => $callerExt->name,
                 ] : null,
-            ]);
+            ];
+        })->values();
 
         // Get recent calls
         $recentCalls = CallLog::whereNotNull('end_time')
@@ -59,7 +71,9 @@ class DashboardController extends Controller
             ->map(fn($call) => [
                 'id' => $call->id,
                 'caller_id' => $call->caller_id,
-                'destination' => $call->destination,
+                'callee_id' => $call->callee_id,
+                'caller_name' => $call->caller_name,
+                'destination' => $call->callee_id,
                 'type' => $call->type,
                 'status' => $call->status,
                 'duration' => $call->duration,
@@ -70,7 +84,7 @@ class DashboardController extends Controller
         return response()->json([
             'success' => true,
             'stats' => $stats,
-            'active_calls' => $activeCalls,
+            'active_calls' => $formattedActiveCalls,
             'recent_calls' => $recentCalls,
         ]);
     }
