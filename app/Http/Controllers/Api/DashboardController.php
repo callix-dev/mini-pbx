@@ -58,12 +58,14 @@ class DashboardController extends Controller
         $formattedActiveCalls = $activeCalls->map(function ($call) {
             $startedAt = isset($call['started_at']) ? Carbon::parse($call['started_at']) : now();
             $callerExt = Extension::where('extension', $call['caller_id'] ?? '')->first();
+            $calleeExt = Extension::where('extension', $call['destination'] ?? '')->first();
             
             return [
                 'uniqueid' => $call['unique_id'] ?? '',
                 'caller_id' => $call['caller_id'] ?? '',
                 'caller_name' => $callerExt?->name ?? $call['caller_id'] ?? '',
                 'destination' => $call['destination'] ?? '',
+                'destination_name' => $calleeExt?->name ?? $call['destination'] ?? '',
                 'type' => $call['type'] ?? 'internal',
                 'status' => 'active',
                 'duration' => $startedAt->diffInSeconds(now()),
@@ -85,7 +87,9 @@ class DashboardController extends Controller
                 'caller_id' => $call->caller_id,
                 'callee_id' => $call->callee_id,
                 'caller_name' => $call->caller_name,
+                'callee_name' => $call->callee_name,
                 'destination' => $call->callee_id,
+                'destination_name' => $call->callee_name,
                 'type' => $call->type,
                 'status' => $call->status,
                 'duration' => $call->duration,

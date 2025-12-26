@@ -121,14 +121,16 @@
                                     </svg>
                                 </div>
                                 <div>
-                                    <p class="font-medium text-gray-900 dark:text-white">{{ $call->caller_id ?: 'Unknown' }}</p>
+                                    <p class="font-medium text-gray-900 dark:text-white">
+                                        {{ $call->caller_name ?: $call->caller_id ?: 'Unknown' }}
+                                        <span class="text-gray-400">→</span>
+                                        {{ $call->callee_name ?: $call->callee_id ?: $call->destination ?: 'Unknown' }}
+                                    </p>
                                     <p class="text-sm text-gray-500 dark:text-gray-400">
                                         @if($call->extension)
                                             Agent: {{ $call->extension->name }}
                                         @endif
-                                        @if($call->queue)
-                                            · {{ $call->queue->name }}
-                                        @endif
+                                        <span class="capitalize">{{ $call->type ?? 'Internal' }}</span>
                                     </p>
                                 </div>
                             </div>
@@ -300,7 +302,11 @@
                                     </svg>
                                 </div>
                                 <div>
-                                    <p class="font-medium text-gray-900 dark:text-white text-sm">{{ $call->caller_id ?: 'Unknown' }}</p>
+                                    <p class="font-medium text-gray-900 dark:text-white text-sm">
+                                        {{ $call->caller_name ?: $call->caller_id ?: 'Unknown' }}
+                                        <span class="text-gray-400">→</span>
+                                        {{ $call->callee_name ?: $call->callee_id ?: 'Unknown' }}
+                                    </p>
                                     <p class="text-xs text-gray-500 dark:text-gray-400">{{ $call->start_time?->diffForHumans() }}</p>
                                 </div>
                             </div>
@@ -488,7 +494,7 @@
                                 <p class="font-medium text-gray-900 dark:text-white">
                                     ${call.caller_name || call.caller_id || 'Unknown'} 
                                     <span class="text-gray-400">→</span> 
-                                    ${call.destination || 'Unknown'}
+                                    ${call.destination_name || call.destination || 'Unknown'}
                                 </p>
                                 <p class="text-sm text-gray-500 dark:text-gray-400">
                                     ${call.extension ? 'Agent: ' + call.extension.name : ''}
@@ -519,7 +525,11 @@
                                 </svg>
                             </div>
                             <div>
-                                <p class="text-sm font-medium text-gray-900 dark:text-white">${call.caller_name || call.caller_id}</p>
+                                <p class="text-sm font-medium text-gray-900 dark:text-white">
+                                    ${call.caller_name || call.caller_id} 
+                                    <span class="text-gray-400">→</span> 
+                                    ${call.destination_name || call.destination || call.callee_name || call.callee_id}
+                                </p>
                                 <p class="text-xs text-gray-500 dark:text-gray-400">${call.time_ago}</p>
                             </div>
                         </div>
