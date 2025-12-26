@@ -51,3 +51,4 @@ class AgentStatusChanged implements ShouldBroadcast
     }
 }
 
+

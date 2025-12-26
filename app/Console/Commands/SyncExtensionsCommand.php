@@ -91,3 +91,4 @@ class SyncExtensionsCommand extends Command
     }
 }
 
+

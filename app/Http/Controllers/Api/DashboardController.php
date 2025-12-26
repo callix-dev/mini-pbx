@@ -25,10 +25,22 @@ class DashboardController extends Controller
         // Get active calls from cache (set by AMI listener)
         $cachedActiveCalls = Cache::get('active_calls', []);
         
-        // Filter out stale calls (older than 5 minutes without update)
+        // Filter out stale calls and internal AppDial channels
         $activeCalls = collect($cachedActiveCalls)->filter(function ($call) {
             $cachedAt = Carbon::parse($call['cached_at'] ?? now());
-            return $cachedAt->diffInMinutes(now()) < 5;
+            $destination = $call['destination'] ?? '';
+            
+            // Skip if stale (older than 5 minutes)
+            if ($cachedAt->diffInMinutes(now()) >= 5) {
+                return false;
+            }
+            
+            // Skip internal AppDial channels (destination = 's', 'h', or empty)
+            if (empty($destination) || $destination === 's' || $destination === 'h') {
+                return false;
+            }
+            
+            return true;
         });
 
         // Get statistics

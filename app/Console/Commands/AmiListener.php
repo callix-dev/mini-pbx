@@ -186,6 +186,20 @@ class AmiListener extends Command
             return;
         }
 
+        // Skip internal AppDial channels (they have exten = 's' or empty)
+        // These are secondary channels created when Dial() is called
+        if (empty($exten) || $exten === 's' || $exten === 'h') {
+            if ($this->option('debug')) {
+                $this->line("Skipping internal channel: {$channel} (exten={$exten})");
+            }
+            return;
+        }
+
+        // Skip if caller is same as destination (invalid)
+        if ($callerId === $exten) {
+            return;
+        }
+
         // Determine call type
         $type = 'internal';
         if (str_starts_with($context ?? '', 'from-trunk')) {

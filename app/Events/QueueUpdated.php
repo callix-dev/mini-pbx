@@ -48,3 +48,4 @@ class QueueUpdated implements ShouldBroadcast
     }
 }
 
+

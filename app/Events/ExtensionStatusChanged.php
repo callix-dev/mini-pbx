@@ -54,3 +54,4 @@ class ExtensionStatusChanged implements ShouldBroadcast
     }
 }
 
+
