@@ -184,6 +184,102 @@
                     @endif
                 </div>
             </div>
+
+            <!-- Registration History -->
+            <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
+                <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+                    <h3 class="text-lg font-medium text-gray-900 dark:text-white">Registration History</h3>
+                    <span class="text-sm text-gray-500 dark:text-gray-400">Last 30 days</span>
+                </div>
+                <div class="overflow-hidden">
+                    @if(isset($registrationHistory) && $registrationHistory->count() > 0)
+                        <div class="overflow-x-auto">
+                            <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                                <thead class="bg-gray-50 dark:bg-gray-700/50">
+                                    <tr>
+                                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Date/Time</th>
+                                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Public IP</th>
+                                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Transport</th>
+                                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">User Agent</th>
+                                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Event</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                                    @foreach($registrationHistory as $reg)
+                                        <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                                            <td class="px-4 py-3 whitespace-nowrap">
+                                                <div class="text-sm text-gray-900 dark:text-white">{{ $reg->registered_at->format('M d, Y') }}</div>
+                                                <div class="text-xs text-gray-500 dark:text-gray-400">{{ $reg->registered_at->format('H:i:s') }}</div>
+                                            </td>
+                                            <td class="px-4 py-3 whitespace-nowrap">
+                                                <span class="font-mono text-sm text-gray-900 dark:text-white">
+                                                    {{ $reg->public_ip ?: ($reg->local_ip ?: 'N/A') }}
+                                                </span>
+                                                @if($reg->port)
+                                                    <span class="text-xs text-gray-400">:{{ $reg->port }}</span>
+                                                @endif
+                                            </td>
+                                            <td class="px-4 py-3 whitespace-nowrap">
+                                                @php
+                                                    $transportColors = [
+                                                        'ws' => 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+                                                        'wss' => 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+                                                        'udp' => 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300',
+                                                        'tcp' => 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
+                                                        'tls' => 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+                                                    ];
+                                                    $tColor = $transportColors[strtolower($reg->transport ?? '')] ?? 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300';
+                                                @endphp
+                                                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium {{ $tColor }}">
+                                                    @if($reg->isWebRtc())
+                                                        <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"/>
+                                                        </svg>
+                                                        WebRTC
+                                                    @else
+                                                        {{ strtoupper($reg->transport ?? 'N/A') }}
+                                                    @endif
+                                                </span>
+                                            </td>
+                                            <td class="px-4 py-3">
+                                                <div class="text-xs text-gray-500 dark:text-gray-400 truncate max-w-xs" title="{{ $reg->user_agent }}">
+                                                    {{ Str::limit($reg->user_agent ?? 'Unknown', 40) }}
+                                                </div>
+                                            </td>
+                                            <td class="px-4 py-3 whitespace-nowrap">
+                                                @php
+                                                    $eventColors = [
+                                                        'registered' => 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+                                                        'unregistered' => 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+                                                        'expired' => 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400',
+                                                    ];
+                                                    $eColor = $eventColors[$reg->event_type] ?? 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300';
+                                                @endphp
+                                                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium {{ $eColor }}">
+                                                    {{ ucfirst($reg->event_type) }}
+                                                </span>
+                                            </td>
+                                        </tr>
+                                    @endforeach
+                                </tbody>
+                            </table>
+                        </div>
+                        @if($registrationHistory->hasPages())
+                            <div class="px-4 py-3 border-t border-gray-200 dark:border-gray-700">
+                                {{ $registrationHistory->links() }}
+                            </div>
+                        @endif
+                    @else
+                        <div class="p-6 text-center text-gray-500 dark:text-gray-400">
+                            <svg class="mx-auto h-10 w-10 text-gray-400 dark:text-gray-500 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                            </svg>
+                            <p class="text-sm">No registration history available yet.</p>
+                            <p class="text-xs mt-1">History will be recorded once the extension registers.</p>
+                        </div>
+                    @endif
+                </div>
+            </div>
         </div>
 
         <!-- Sidebar -->
@@ -284,5 +380,6 @@
         </div>
     </div>
 </x-app-layout>
+
 
 

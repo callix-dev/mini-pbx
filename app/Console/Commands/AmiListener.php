@@ -9,6 +9,7 @@ use App\Events\ExtensionStatusChanged;
 use App\Events\QueueUpdated;
 use App\Models\CallLog;
 use App\Models\Extension;
+use App\Models\ExtensionRegistration;
 use App\Models\Queue;
 use App\Models\User;
 use App\Services\SettingsService;
@@ -684,17 +685,30 @@ class AmiListener extends Command
             default => $extensionModel->status,
         };
 
-        // Extract IP address from URI (format: sip:ext@ip:port)
-        $ipAddress = null;
-        if ($uri && preg_match('/@([^:]+)/', $uri, $matches)) {
-            $ipAddress = $matches[1];
-        }
+        // Parse the URI to extract IP, port, and transport info
+        $registrationInfo = $this->parseContactUri($uri);
+        $ipAddress = $registrationInfo['local_ip'];
+        $publicIp = $registrationInfo['public_ip'];
+        $port = $registrationInfo['port'];
+        $transport = $registrationInfo['transport'];
 
         $previousStatus = $extensionModel->status;
         $updateData = ['status' => $status];
         
         // Only update registration info if becoming reachable
         if (in_array($contactStatus, ['Reachable', 'Created', 'Updated'])) {
+            // Log registration to history
+            $this->logRegistration(
+                $extensionModel,
+                $contactStatus === 'Removed' ? 'unregistered' : 'registered',
+                $publicIp,
+                $ipAddress,
+                $port,
+                $transport,
+                $userAgent,
+                $uri,
+                $event
+            );
             $updateData['last_registered_at'] = now();
             if ($ipAddress) {
                 $updateData['last_registered_ip'] = $ipAddress;
@@ -883,6 +897,187 @@ class AmiListener extends Command
         $this->sendCommand([
             'Action' => 'PJSIPShowContacts',
         ]);
+    }
+
+    /**
+     * Parse a SIP contact URI to extract IP, port, transport, and public IP info
+     * 
+     * Format examples:
+     * - sip:abc123@192.168.1.100:5060
+     * - sip:abc123@10.0.0.5:60066;transport=WS;x-ast-orig-host=randomstring.invalid:0
+     * - sip:ext@192.168.1.100:5060;transport=TLS
+     */
+    private function parseContactUri(?string $uri): array
+    {
+        $result = [
+            'local_ip' => null,
+            'public_ip' => null,
+            'port' => null,
+            'transport' => 'udp', // default
+        ];
+
+        if (!$uri) {
+            return $result;
+        }
+
+        // Extract transport from URI parameters
+        if (preg_match('/transport=(\w+)/i', $uri, $matches)) {
+            $result['transport'] = strtolower($matches[1]);
+        }
+
+        // Extract the host:port part from the URI (sip:user@host:port)
+        if (preg_match('/@([^:;]+)(?::(\d+))?/', $uri, $matches)) {
+            $host = $matches[1];
+            $result['port'] = isset($matches[2]) ? (int) $matches[2] : null;
+            
+            // Check if host looks like an IP address
+            if (filter_var($host, FILTER_VALIDATE_IP)) {
+                $result['local_ip'] = $host;
+                
+                // If it's a public IP (not private range), use it as public_ip too
+                if ($this->isPublicIp($host)) {
+                    $result['public_ip'] = $host;
+                }
+            } else {
+                // It's a hostname (e.g., randomstring.invalid for WebRTC)
+                $result['local_ip'] = $host;
+            }
+        }
+
+        // Look for x-ast-orig-host which contains the original request source
+        // This is sometimes set by Asterisk for proxied connections
+        if (preg_match('/x-ast-orig-host=([^:;]+)(?::(\d+))?/', $uri, $matches)) {
+            // The orig-host is often the WebRTC instance ID, not useful for public IP
+        }
+
+        // For WebRTC connections, try to get the real public IP from the connection
+        // This would typically be available in the Asterisk logs or via additional AMI events
+        // We'll rely on ps_contacts.via_addr for the actual public IP
+
+        return $result;
+    }
+
+    /**
+     * Check if an IP address is a public (non-private) IP
+     */
+    private function isPublicIp(string $ip): bool
+    {
+        if (!filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+            return false; // For now, only check IPv4
+        }
+
+        // Private ranges: 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 127.0.0.0/8
+        $privateRanges = [
+            ['10.0.0.0', '10.255.255.255'],
+            ['172.16.0.0', '172.31.255.255'],
+            ['192.168.0.0', '192.168.255.255'],
+            ['127.0.0.0', '127.255.255.255'],
+        ];
+
+        $ipLong = ip2long($ip);
+
+        foreach ($privateRanges as [$start, $end]) {
+            if ($ipLong >= ip2long($start) && $ipLong <= ip2long($end)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Log extension registration to history table
+     */
+    private function logRegistration(
+        Extension $extension,
+        string $eventType,
+        ?string $publicIp,
+        ?string $localIp,
+        ?int $port,
+        ?string $transport,
+        ?string $userAgent,
+        ?string $contactUri,
+        array $rawEvent = []
+    ): void {
+        try {
+            // Try to get via_addr from ps_contacts for public IP (more reliable)
+            $viaAddr = $this->getViaAddrFromContacts($extension->extension);
+            if ($viaAddr) {
+                $publicIp = $viaAddr;
+            }
+
+            // Don't log too frequently - dedupe within 1 minute
+            $recentReg = ExtensionRegistration::where('extension_id', $extension->id)
+                ->where('event_type', $eventType)
+                ->where('registered_at', '>=', now()->subMinute())
+                ->first();
+
+            if ($recentReg) {
+                // Update existing registration record
+                $recentReg->update([
+                    'public_ip' => $publicIp ?? $recentReg->public_ip,
+                    'local_ip' => $localIp ?? $recentReg->local_ip,
+                    'port' => $port ?? $recentReg->port,
+                    'transport' => $transport ?? $recentReg->transport,
+                    'user_agent' => $userAgent ?? $recentReg->user_agent,
+                ]);
+                return;
+            }
+
+            ExtensionRegistration::create([
+                'extension_id' => $extension->id,
+                'public_ip' => $publicIp,
+                'local_ip' => $localIp,
+                'port' => $port,
+                'transport' => $transport,
+                'user_agent' => $userAgent,
+                'contact_uri' => $contactUri,
+                'event_type' => $eventType,
+                'expiry' => $rawEvent['Expiry'] ?? null,
+                'metadata' => [
+                    'endpoint' => $rawEvent['Endpoint'] ?? null,
+                    'aor' => $rawEvent['AOR'] ?? null,
+                    'contact_status' => $rawEvent['ContactStatus'] ?? null,
+                ],
+                'registered_at' => now(),
+            ]);
+
+            // Update extension's public_ip field
+            if ($publicIp && $eventType === 'registered') {
+                $extension->update(['public_ip' => $publicIp]);
+            }
+
+            if ($this->option('debug')) {
+                $this->info("Registration logged: {$extension->extension} ({$eventType}) from {$publicIp}");
+            }
+        } catch (\Exception $e) {
+            Log::error('Failed to log registration', [
+                'extension' => $extension->extension,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * Get the via_addr (public IP) from ps_contacts table
+     * This is the source IP that Asterisk sees for incoming SIP packets
+     */
+    private function getViaAddrFromContacts(string $extension): ?string
+    {
+        try {
+            $contact = \DB::table('ps_contacts')
+                ->where('endpoint', $extension)
+                ->orderBy('expiration_time', 'desc')
+                ->first();
+
+            if ($contact && !empty($contact->via_addr)) {
+                return $contact->via_addr;
+            }
+        } catch (\Exception $e) {
+            // Table might not exist or be accessible
+        }
+
+        return null;
     }
 
     public function __destruct()

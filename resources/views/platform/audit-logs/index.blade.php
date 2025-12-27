@@ -144,10 +144,10 @@
                             </td>
                             <td>
                                 <span class="text-gray-900 dark:text-white">
-                                    {{ class_basename($log->model_type ?? '') }}
+                                    {{ class_basename($log->auditable_type ?? '') }}
                                 </span>
-                                @if($log->model_id)
-                                    <span class="text-xs text-gray-500 dark:text-gray-400">#{{ $log->model_id }}</span>
+                                @if($log->auditable_id)
+                                    <span class="text-xs text-gray-500 dark:text-gray-400">#{{ $log->auditable_id }}</span>
                                 @endif
                             </td>
                             <td class="max-w-xs">

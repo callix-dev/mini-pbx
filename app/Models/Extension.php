@@ -29,6 +29,7 @@ class Extension extends Model
         'settings',
         'last_registered_at',
         'last_registered_ip',
+        'public_ip',
     ];
 
     protected $casts = [
@@ -84,6 +85,21 @@ class Extension extends Model
     public function callLogs(): HasMany
     {
         return $this->hasMany(CallLog::class);
+    }
+
+    public function registrations(): HasMany
+    {
+        return $this->hasMany(ExtensionRegistration::class);
+    }
+
+    /**
+     * Get the latest registration history entries
+     */
+    public function recentRegistrations(int $days = 30)
+    {
+        return $this->registrations()
+            ->where('registered_at', '>=', now()->subDays($days))
+            ->orderBy('registered_at', 'desc');
     }
 
     public function scopeActive($query)

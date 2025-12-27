@@ -81,7 +81,13 @@ class ExtensionController extends Controller
 
         $recentCalls = $extension->callLogs()->with('disposition')->latest()->limit(20)->get();
 
-        return view('telephony.extensions.show', compact('extension', 'recentCalls'));
+        // Get registration history for last 30 days
+        $registrationHistory = $extension->registrations()
+            ->where('registered_at', '>=', now()->subDays(30))
+            ->orderBy('registered_at', 'desc')
+            ->paginate(15);
+
+        return view('telephony.extensions.show', compact('extension', 'recentCalls', 'registrationHistory'));
     }
 
     public function edit(Extension $extension): View

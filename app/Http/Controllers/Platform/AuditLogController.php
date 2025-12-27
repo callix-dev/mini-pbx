@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Platform;
 
 use App\Http\Controllers\Controller;
 use App\Models\AuditLog;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -22,6 +23,10 @@ class AuditLogController extends Controller
             $query->where('user_id', $request->user_id);
         }
 
+        if ($request->filled('model_type')) {
+            $query->where('auditable_type', 'like', '%' . $request->model_type . '%');
+        }
+
         if ($request->filled('date_from')) {
             $query->whereDate('created_at', '>=', $request->date_from);
         }
@@ -35,14 +40,16 @@ class AuditLogController extends Controller
             $query->where(function ($q) use ($search) {
                 $q->where('auditable_type', 'like', "%{$search}%")
                     ->orWhere('description', 'like', "%{$search}%")
-                    ->orWhere('user_name', 'like', "%{$search}%");
+                    ->orWhere('user_name', 'like', "%{$search}%")
+                    ->orWhere('ip_address', 'like', "%{$search}%");
             });
         }
 
-        $logs = $query->latest('created_at')->paginate(50);
+        $auditLogs = $query->latest('created_at')->paginate(50);
         $actions = AuditLog::ACTIONS;
+        $users = User::orderBy('name')->get();
 
-        return view('platform.audit-logs.index', compact('logs', 'actions'));
+        return view('platform.audit-logs.index', compact('auditLogs', 'actions', 'users'));
     }
 
     public function show(AuditLog $auditLog): View
@@ -93,5 +100,6 @@ class AuditLogController extends Controller
         }, 200, $headers);
     }
 }
+
 
 

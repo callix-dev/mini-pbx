@@ -183,17 +183,33 @@
                                     <div class="text-xs">
                                         <p class="text-gray-900 dark:text-white">{{ $extension->last_registered_at->diffForHumans() }}</p>
                                         @php
+                                            // Use public_ip if available, fallback to last_registered_ip
+                                            $publicIp = $extension->public_ip;
                                             $regIp = $extension->last_registered_ip ?? '';
-                                            // Clean up WebRTC random instance IDs (e.g., "8pneu0k4eh9s.invalid" -> "WebRTC")
-                                            if (str_contains($regIp, '.invalid')) {
-                                                $displayIp = '<span class="inline-flex items-center text-primary-600 dark:text-primary-400"><svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"></path></svg>WebRTC</span>';
-                                            } elseif ($regIp) {
-                                                $displayIp = $regIp;
-                                            } else {
-                                                $displayIp = 'N/A';
-                                            }
+                                            $isWebRtc = str_contains($regIp, '.invalid');
                                         @endphp
-                                        <p class="text-gray-500 dark:text-gray-400 font-mono">{!! $displayIp !!}</p>
+                                        @if($publicIp)
+                                            <p class="text-gray-600 dark:text-gray-300 font-mono">{{ $publicIp }}</p>
+                                            @if($isWebRtc)
+                                                <span class="inline-flex items-center text-xs text-primary-600 dark:text-primary-400">
+                                                    <svg class="w-3 h-3 mr-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"/>
+                                                    </svg>
+                                                    WebRTC
+                                                </span>
+                                            @endif
+                                        @elseif($isWebRtc)
+                                            <span class="inline-flex items-center text-primary-600 dark:text-primary-400">
+                                                <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"/>
+                                                </svg>
+                                                WebRTC
+                                            </span>
+                                        @elseif($regIp)
+                                            <p class="text-gray-500 dark:text-gray-400 font-mono">{{ $regIp }}</p>
+                                        @else
+                                            <span class="text-gray-400">N/A</span>
+                                        @endif
                                     </div>
                                 @else
                                     <span class="text-xs text-gray-400 dark:text-gray-500">Never</span>
