@@ -183,13 +183,23 @@
                                     <div class="text-xs">
                                         <p class="text-gray-900 dark:text-white">{{ $extension->last_registered_at->diffForHumans() }}</p>
                                         @php
-                                            // Use public_ip if available, fallback to last_registered_ip
+                                            // Get IPs and check if they're valid (not .invalid hostnames)
                                             $publicIp = $extension->public_ip;
                                             $regIp = $extension->last_registered_ip ?? '';
-                                            $isWebRtc = str_contains($regIp, '.invalid');
+                                            
+                                            // Check if either IP contains .invalid (WebRTC instance ID)
+                                            $isWebRtc = str_contains($regIp, '.invalid') || str_contains($publicIp ?? '', '.invalid');
+                                            
+                                            // Get the display IP - filter out .invalid hostnames
+                                            $displayIp = null;
+                                            if ($publicIp && !str_contains($publicIp, '.invalid') && filter_var($publicIp, FILTER_VALIDATE_IP)) {
+                                                $displayIp = $publicIp;
+                                            } elseif ($regIp && !str_contains($regIp, '.invalid') && filter_var($regIp, FILTER_VALIDATE_IP)) {
+                                                $displayIp = $regIp;
+                                            }
                                         @endphp
-                                        @if($publicIp)
-                                            <p class="text-gray-600 dark:text-gray-300 font-mono">{{ $publicIp }}</p>
+                                        @if($displayIp)
+                                            <p class="text-gray-600 dark:text-gray-300 font-mono">{{ $displayIp }}</p>
                                             @if($isWebRtc)
                                                 <span class="inline-flex items-center text-xs text-primary-600 dark:text-primary-400">
                                                     <svg class="w-3 h-3 mr-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -205,8 +215,6 @@
                                                 </svg>
                                                 WebRTC
                                             </span>
-                                        @elseif($regIp)
-                                            <p class="text-gray-500 dark:text-gray-400 font-mono">{{ $regIp }}</p>
                                         @else
                                             <span class="text-gray-400">N/A</span>
                                         @endif

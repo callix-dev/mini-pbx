@@ -691,6 +691,22 @@ class AmiListener extends Command
         $publicIp = $registrationInfo['public_ip'];
         $port = $registrationInfo['port'];
         $transport = $registrationInfo['transport'];
+        $isWebRtc = $registrationInfo['is_webrtc'] ?? false;
+
+        // Try to get the real public IP from ps_contacts (essential for WebRTC)
+        $viaAddr = $this->getViaAddrFromContacts($extension);
+        if ($viaAddr && filter_var($viaAddr, FILTER_VALIDATE_IP)) {
+            $publicIp = $viaAddr;
+            // For WebRTC, use via_addr as the display IP since local_ip is .invalid
+            if ($isWebRtc || !$ipAddress) {
+                $ipAddress = $viaAddr;
+            }
+        }
+
+        // Filter out .invalid hostnames - these are WebRTC instance IDs, not real IPs
+        if ($ipAddress && str_contains($ipAddress, '.invalid')) {
+            $ipAddress = $publicIp; // Use public IP instead, or null
+        }
 
         $previousStatus = $extensionModel->status;
         $updateData = ['status' => $status];
@@ -710,8 +726,11 @@ class AmiListener extends Command
                 $event
             );
             $updateData['last_registered_at'] = now();
-            if ($ipAddress) {
+            // Only store valid IPs (not .invalid hostnames)
+            if ($ipAddress && filter_var($ipAddress, FILTER_VALIDATE_IP)) {
                 $updateData['last_registered_ip'] = $ipAddress;
+            } elseif ($publicIp && filter_var($publicIp, FILTER_VALIDATE_IP)) {
+                $updateData['last_registered_ip'] = $publicIp;
             }
         }
 
