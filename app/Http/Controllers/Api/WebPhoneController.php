@@ -170,7 +170,7 @@ class WebPhoneController extends Controller
     public function reportIp(Request $request): JsonResponse
     {
         $request->validate([
-            'public_ip' => 'nullable|ip',
+            'public_ip' => 'required|ip',
         ]);
 
         $user = $request->user();
@@ -182,31 +182,38 @@ class WebPhoneController extends Controller
             ], 400);
         }
 
-        // Get the IP - either from the request body or from the request itself
         $publicIp = $request->input('public_ip');
-        
-        // Fallback to the actual request IP if not provided
-        if (!$publicIp) {
-            $publicIp = $request->ip();
-            
-            // Try to get real IP from X-Forwarded-For header (behind proxy)
-            if ($request->hasHeader('X-Forwarded-For')) {
-                $forwardedFor = $request->header('X-Forwarded-For');
-                $ips = array_map('trim', explode(',', $forwardedFor));
-                $publicIp = $ips[0] ?? $publicIp;
-            }
+
+        // Validate it's a real public IP (not localhost/private)
+        if (!filter_var($publicIp, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Invalid or private IP address',
+                'detected_ip' => $publicIp,
+            ], 400);
         }
 
-        // Only update if we have a valid public IP (not localhost/private)
-        if ($publicIp && filter_var($publicIp, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
-            $extension = $user->extension;
-            $extension->update([
-                'public_ip' => $publicIp,
-                'last_registered_ip' => $publicIp,
-                'last_registered_at' => now(),
-            ]);
+        $extension = $user->extension;
+        $extension->update([
+            'public_ip' => $publicIp,
+            'last_registered_ip' => $publicIp,
+            'last_registered_at' => now(),
+        ]);
 
-            // Also log to registration history
+        // Check if we already have a recent registration (within 1 minute) to avoid duplicates
+        $recentReg = \App\Models\ExtensionRegistration::where('extension_id', $extension->id)
+            ->where('event_type', 'registered')
+            ->where('registered_at', '>=', now()->subMinute())
+            ->first();
+
+        if ($recentReg) {
+            // Update existing
+            $recentReg->update([
+                'public_ip' => $publicIp,
+                'user_agent' => $request->userAgent(),
+            ]);
+        } else {
+            // Create new registration entry
             \App\Models\ExtensionRegistration::create([
                 'extension_id' => $extension->id,
                 'public_ip' => $publicIp,
@@ -215,23 +222,17 @@ class WebPhoneController extends Controller
                 'event_type' => 'registered',
                 'registered_at' => now(),
             ]);
-
-            \Log::info('WebPhone IP reported', [
-                'extension' => $extension->extension,
-                'public_ip' => $publicIp,
-                'user_agent' => $request->userAgent(),
-            ]);
-
-            return response()->json([
-                'success' => true,
-                'public_ip' => $publicIp,
-            ]);
         }
 
+        \Log::info('WebPhone IP reported', [
+            'extension' => $extension->extension,
+            'public_ip' => $publicIp,
+            'user_agent' => $request->userAgent(),
+        ]);
+
         return response()->json([
-            'success' => false,
-            'message' => 'Could not determine public IP',
-            'detected_ip' => $publicIp,
+            'success' => true,
+            'public_ip' => $publicIp,
         ]);
     }
 }

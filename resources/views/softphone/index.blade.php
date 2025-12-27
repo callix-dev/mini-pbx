@@ -577,21 +577,47 @@
             
             async reportPublicIp() {
                 try {
-                    // First, try to get the public IP from an external service
+                    // Try multiple services to detect public IP
                     let publicIp = null;
                     
-                    try {
-                        const response = await fetch('https://api.ipify.org?format=json', { 
-                            timeout: 5000,
-                            cache: 'no-cache'
-                        });
-                        if (response.ok) {
-                            const data = await response.json();
-                            publicIp = data.ip;
-                            console.log('Detected public IP:', publicIp);
+                    const ipServices = [
+                        { url: 'https://api.ipify.org?format=json', parser: (data) => data.ip },
+                        { url: 'https://api.ip.sb/ip', parser: (data) => data.trim() },
+                        { url: 'https://ipinfo.io/json', parser: (data) => data.ip },
+                    ];
+                    
+                    for (const service of ipServices) {
+                        if (publicIp) break;
+                        try {
+                            const controller = new AbortController();
+                            const timeoutId = setTimeout(() => controller.abort(), 5000);
+                            
+                            const response = await fetch(service.url, { 
+                                signal: controller.signal,
+                                cache: 'no-cache',
+                                mode: 'cors'
+                            });
+                            clearTimeout(timeoutId);
+                            
+                            if (response.ok) {
+                                const text = await response.text();
+                                try {
+                                    const data = JSON.parse(text);
+                                    publicIp = service.parser(data);
+                                } catch {
+                                    publicIp = service.parser(text);
+                                }
+                                console.log('Detected public IP from', service.url, ':', publicIp);
+                            }
+                        } catch (e) {
+                            console.log('IP detection failed for', service.url, ':', e.message);
                         }
-                    } catch (e) {
-                        console.log('Could not detect public IP from ipify:', e);
+                    }
+                    
+                    // Only report if we have a valid public IP (not localhost/private)
+                    if (!publicIp || publicIp === '127.0.0.1' || publicIp.startsWith('192.168.') || publicIp.startsWith('10.')) {
+                        console.log('No valid public IP detected, skipping report');
+                        return;
                     }
                     
                     // Report to our server
