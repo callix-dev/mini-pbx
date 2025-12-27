@@ -914,6 +914,7 @@ class AmiListener extends Command
             'public_ip' => null,
             'port' => null,
             'transport' => 'udp', // default
+            'is_webrtc' => false,
         ];
 
         if (!$uri) {
@@ -923,6 +924,8 @@ class AmiListener extends Command
         // Extract transport from URI parameters
         if (preg_match('/transport=(\w+)/i', $uri, $matches)) {
             $result['transport'] = strtolower($matches[1]);
+            // Mark as WebRTC if transport is WS or WSS
+            $result['is_webrtc'] = in_array(strtolower($matches[1]), ['ws', 'wss']);
         }
 
         // Extract the host:port part from the URI (sip:user@host:port)
@@ -938,21 +941,15 @@ class AmiListener extends Command
                 if ($this->isPublicIp($host)) {
                     $result['public_ip'] = $host;
                 }
+            } elseif (str_contains($host, '.invalid')) {
+                // WebRTC instance ID - don't store as IP, mark as WebRTC
+                $result['is_webrtc'] = true;
+                // Don't store the .invalid hostname as local_ip
             } else {
-                // It's a hostname (e.g., randomstring.invalid for WebRTC)
+                // Regular hostname
                 $result['local_ip'] = $host;
             }
         }
-
-        // Look for x-ast-orig-host which contains the original request source
-        // This is sometimes set by Asterisk for proxied connections
-        if (preg_match('/x-ast-orig-host=([^:;]+)(?::(\d+))?/', $uri, $matches)) {
-            // The orig-host is often the WebRTC instance ID, not useful for public IP
-        }
-
-        // For WebRTC connections, try to get the real public IP from the connection
-        // This would typically be available in the Asterisk logs or via additional AMI events
-        // We'll rely on ps_contacts.via_addr for the actual public IP
 
         return $result;
     }
@@ -1000,10 +997,18 @@ class AmiListener extends Command
         array $rawEvent = []
     ): void {
         try {
-            // Try to get via_addr from ps_contacts for public IP (more reliable)
+            // Try to get via_addr from ps_contacts for public IP (more reliable for WebRTC)
             $viaAddr = $this->getViaAddrFromContacts($extension->extension);
-            if ($viaAddr) {
+            if ($viaAddr && filter_var($viaAddr, FILTER_VALIDATE_IP)) {
                 $publicIp = $viaAddr;
+            }
+
+            // Clean up: don't store .invalid hostnames as IPs
+            if ($publicIp && str_contains($publicIp, '.invalid')) {
+                $publicIp = null;
+            }
+            if ($localIp && str_contains($localIp, '.invalid')) {
+                $localIp = null;
             }
 
             // Don't log too frequently - dedupe within 1 minute
@@ -1013,14 +1018,27 @@ class AmiListener extends Command
                 ->first();
 
             if ($recentReg) {
-                // Update existing registration record
-                $recentReg->update([
-                    'public_ip' => $publicIp ?? $recentReg->public_ip,
-                    'local_ip' => $localIp ?? $recentReg->local_ip,
-                    'port' => $port ?? $recentReg->port,
-                    'transport' => $transport ?? $recentReg->transport,
-                    'user_agent' => $userAgent ?? $recentReg->user_agent,
-                ]);
+                // Update existing registration record with new data (if better)
+                $updateData = [];
+                if ($publicIp && !$recentReg->public_ip) {
+                    $updateData['public_ip'] = $publicIp;
+                }
+                if ($localIp && !$recentReg->local_ip) {
+                    $updateData['local_ip'] = $localIp;
+                }
+                if ($port) {
+                    $updateData['port'] = $port;
+                }
+                if ($transport) {
+                    $updateData['transport'] = $transport;
+                }
+                if ($userAgent && $userAgent !== 'Unknown') {
+                    $updateData['user_agent'] = $userAgent;
+                }
+                
+                if (!empty($updateData)) {
+                    $recentReg->update($updateData);
+                }
                 return;
             }
 
@@ -1042,13 +1060,13 @@ class AmiListener extends Command
                 'registered_at' => now(),
             ]);
 
-            // Update extension's public_ip field
-            if ($publicIp && $eventType === 'registered') {
+            // Update extension's public_ip field (only if we have a valid IP)
+            if ($publicIp && $eventType === 'registered' && filter_var($publicIp, FILTER_VALIDATE_IP)) {
                 $extension->update(['public_ip' => $publicIp]);
             }
 
             if ($this->option('debug')) {
-                $this->info("Registration logged: {$extension->extension} ({$eventType}) from {$publicIp}");
+                $this->info("Registration logged: {$extension->extension} ({$eventType}) from " . ($publicIp ?? 'WebRTC'));
             }
         } catch (\Exception $e) {
             Log::error('Failed to log registration', [
@@ -1061,20 +1079,47 @@ class AmiListener extends Command
     /**
      * Get the via_addr (public IP) from ps_contacts table
      * This is the source IP that Asterisk sees for incoming SIP packets
+     * 
+     * For WebRTC connections, this is the only reliable way to get the client's public IP
+     * because the Contact URI contains a random .invalid hostname
      */
-    private function getViaAddrFromContacts(string $extension): ?string
+    private function getViaAddrFromContacts(string $extension, int $retries = 3): ?string
     {
-        try {
-            $contact = \DB::table('ps_contacts')
-                ->where('endpoint', $extension)
-                ->orderBy('expiration_time', 'desc')
-                ->first();
+        // Try a few times with small delays in case Asterisk hasn't written the data yet
+        for ($i = 0; $i < $retries; $i++) {
+            try {
+                // Query by endpoint or by id containing the extension
+                $contact = \DB::table('ps_contacts')
+                    ->where(function ($q) use ($extension) {
+                        $q->where('endpoint', $extension)
+                          ->orWhere('id', 'like', $extension . ';%')
+                          ->orWhere('id', 'like', $extension . '@%');
+                    })
+                    ->orderBy('expiration_time', 'desc')
+                    ->first();
 
-            if ($contact && !empty($contact->via_addr)) {
-                return $contact->via_addr;
+                if ($contact) {
+                    // via_addr contains the real source IP for WebRTC connections
+                    if (!empty($contact->via_addr)) {
+                        return $contact->via_addr;
+                    }
+                    
+                    // Fallback: try to extract IP from reg_server or other fields
+                    if (!empty($contact->reg_server) && filter_var($contact->reg_server, FILTER_VALIDATE_IP)) {
+                        return $contact->reg_server;
+                    }
+                }
+                
+                // Wait a bit before retrying
+                if ($i < $retries - 1) {
+                    usleep(100000); // 100ms
+                }
+            } catch (\Exception $e) {
+                // Table might not exist or be accessible
+                if ($this->option('debug')) {
+                    $this->warn("Error getting via_addr: " . $e->getMessage());
+                }
             }
-        } catch (\Exception $e) {
-            // Table might not exist or be accessible
         }
 
         return null;

@@ -2,9 +2,30 @@
 @if(auth()->user()->extension)
 <div class="fixed bottom-4 right-4 z-50" x-data="softphoneStatus()" x-init="init()">
     
-    <!-- Main Widget Container -->
-    <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden transition-all duration-300"
-         :class="isInCall ? 'w-80' : 'w-64'">
+    <!-- Minimized View - Small circular button -->
+    <template x-if="isMinimized && !isInCall">
+        <button @click="isMinimized = false" 
+                class="w-12 h-12 rounded-full bg-gradient-to-r from-primary-600 to-accent-600 shadow-lg hover:shadow-xl flex items-center justify-center text-white transition-all hover:scale-105"
+                title="Open WebPhone widget">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/>
+            </svg>
+            <!-- Status dot -->
+            <span class="absolute -top-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-white"
+                  :class="isRegistered ? 'bg-green-500' : 'bg-red-500'"></span>
+        </button>
+    </template>
+    
+    <!-- Main Widget Container (when expanded or in call) -->
+    <div x-show="!isMinimized || isInCall" x-cloak
+         class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden transition-all duration-300"
+         :class="isInCall ? 'w-80' : 'w-64'"
+         x-transition:enter="transition ease-out duration-200"
+         x-transition:enter-start="opacity-0 scale-95 translate-y-4"
+         x-transition:enter-end="opacity-100 scale-100 translate-y-0"
+         x-transition:leave="transition ease-in duration-150"
+         x-transition:leave-start="opacity-100 scale-100 translate-y-0"
+         x-transition:leave-end="opacity-0 scale-95 translate-y-4">
         
         <!-- In Call View -->
         <template x-if="isInCall">
@@ -142,17 +163,17 @@
                 </div>
             </div>
         </template>
+        
+        <!-- Minimize Toggle Button (inside the widget) -->
+        <button @click="isMinimized = true" 
+                x-show="!isInCall"
+                class="absolute -top-2 -left-2 w-6 h-6 bg-gray-200 dark:bg-gray-600 hover:bg-gray-300 dark:hover:bg-gray-500 rounded-full flex items-center justify-center text-gray-500 dark:text-gray-300 shadow-md transition-colors z-10"
+                title="Minimize widget">
+            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+            </svg>
+        </button>
     </div>
-    
-    <!-- Minimize Toggle (optional, for users who want less space) -->
-    <button @click="isMinimized = !isMinimized" 
-            x-show="!isInCall"
-            class="absolute -top-2 -left-2 w-6 h-6 bg-gray-200 dark:bg-gray-600 hover:bg-gray-300 dark:hover:bg-gray-500 rounded-full flex items-center justify-center text-gray-500 dark:text-gray-300 shadow-md transition-colors"
-            :title="isMinimized ? 'Expand' : 'Minimize'">
-        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" :class="{ 'rotate-180': isMinimized }">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
-        </svg>
-    </button>
 </div>
 
 <script>
@@ -160,7 +181,7 @@ function softphoneStatus() {
     return {
         phoneWindow: null,
         isWindowOpen: false,
-        isMinimized: false,
+        isMinimized: localStorage.getItem('softphone-widget-minimized') === 'true',
         checkInterval: null,
         
         // Synced state from popup
@@ -178,6 +199,11 @@ function softphoneStatus() {
         },
         
         init() {
+            // Watch for minimized state changes and persist
+            this.$watch('isMinimized', (value) => {
+                localStorage.setItem('softphone-widget-minimized', value ? 'true' : 'false');
+            });
+            
             // Subscribe to phone sync updates
             if (window.phoneSync) {
                 window.phoneSync.subscribe((state) => {

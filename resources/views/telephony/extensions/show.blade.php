@@ -212,11 +212,26 @@
                                                 <div class="text-xs text-gray-500 dark:text-gray-400">{{ $reg->registered_at->format('H:i:s') }}</div>
                                             </td>
                                             <td class="px-4 py-3 whitespace-nowrap">
-                                                <span class="font-mono text-sm text-gray-900 dark:text-white">
-                                                    {{ $reg->public_ip ?: ($reg->local_ip ?: 'N/A') }}
-                                                </span>
-                                                @if($reg->port)
-                                                    <span class="text-xs text-gray-400">:{{ $reg->port }}</span>
+                                                @php
+                                                    $displayIp = $reg->public_ip ?: $reg->local_ip;
+                                                    $isInvalidHost = $displayIp && str_contains($displayIp, '.invalid');
+                                                @endphp
+                                                @if($displayIp && !$isInvalidHost)
+                                                    <span class="font-mono text-sm text-gray-900 dark:text-white">
+                                                        {{ $displayIp }}
+                                                    </span>
+                                                    @if($reg->port)
+                                                        <span class="text-xs text-gray-400">:{{ $reg->port }}</span>
+                                                    @endif
+                                                @elseif($reg->isWebRtc() || $isInvalidHost)
+                                                    <span class="text-sm text-gray-500 dark:text-gray-400 italic">
+                                                        Via WebRTC
+                                                    </span>
+                                                    @if($reg->port)
+                                                        <span class="text-xs text-gray-400">:{{ $reg->port }}</span>
+                                                    @endif
+                                                @else
+                                                    <span class="text-sm text-gray-400">N/A</span>
                                                 @endif
                                             </td>
                                             <td class="px-4 py-3 whitespace-nowrap">
