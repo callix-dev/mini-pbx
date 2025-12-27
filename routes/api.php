@@ -57,6 +57,9 @@ Route::middleware(['web', 'auth'])->prefix('webphone')->group(function () {
     
     // Get dial settings
     Route::get('/settings', [WebPhoneController::class, 'dialSettings']);
+    
+    // Report client's public IP (called when WebPhone registers)
+    Route::post('/report-ip', [WebPhoneController::class, 'reportIp']);
 });
 
 /*

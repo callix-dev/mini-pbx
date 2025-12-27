@@ -570,6 +570,47 @@
             announceRegistered() {
                 this.stopConnectingAnnouncement();
                 this.speak('Your phone is connected successfully');
+                
+                // Report public IP to server
+                this.reportPublicIp();
+            },
+            
+            async reportPublicIp() {
+                try {
+                    // First, try to get the public IP from an external service
+                    let publicIp = null;
+                    
+                    try {
+                        const response = await fetch('https://api.ipify.org?format=json', { 
+                            timeout: 5000,
+                            cache: 'no-cache'
+                        });
+                        if (response.ok) {
+                            const data = await response.json();
+                            publicIp = data.ip;
+                            console.log('Detected public IP:', publicIp);
+                        }
+                    } catch (e) {
+                        console.log('Could not detect public IP from ipify:', e);
+                    }
+                    
+                    // Report to our server
+                    const reportResponse = await fetch('/api/webphone/report-ip', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content
+                        },
+                        body: JSON.stringify({ public_ip: publicIp })
+                    });
+                    
+                    if (reportResponse.ok) {
+                        const result = await reportResponse.json();
+                        console.log('IP reported successfully:', result);
+                    }
+                } catch (error) {
+                    console.error('Error reporting public IP:', error);
+                }
             },
             
             announceRegistrationFailed() {

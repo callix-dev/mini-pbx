@@ -162,5 +162,77 @@ class WebPhoneController extends Controller
             ],
         ]);
     }
+
+    /**
+     * Report the client's public IP address.
+     * Called by the WebPhone when it registers or detects its public IP.
+     */
+    public function reportIp(Request $request): JsonResponse
+    {
+        $request->validate([
+            'public_ip' => 'nullable|ip',
+        ]);
+
+        $user = $request->user();
+        
+        if (!$user->extension) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No extension assigned',
+            ], 400);
+        }
+
+        // Get the IP - either from the request body or from the request itself
+        $publicIp = $request->input('public_ip');
+        
+        // Fallback to the actual request IP if not provided
+        if (!$publicIp) {
+            $publicIp = $request->ip();
+            
+            // Try to get real IP from X-Forwarded-For header (behind proxy)
+            if ($request->hasHeader('X-Forwarded-For')) {
+                $forwardedFor = $request->header('X-Forwarded-For');
+                $ips = array_map('trim', explode(',', $forwardedFor));
+                $publicIp = $ips[0] ?? $publicIp;
+            }
+        }
+
+        // Only update if we have a valid public IP (not localhost/private)
+        if ($publicIp && filter_var($publicIp, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
+            $extension = $user->extension;
+            $extension->update([
+                'public_ip' => $publicIp,
+                'last_registered_ip' => $publicIp,
+                'last_registered_at' => now(),
+            ]);
+
+            // Also log to registration history
+            \App\Models\ExtensionRegistration::create([
+                'extension_id' => $extension->id,
+                'public_ip' => $publicIp,
+                'transport' => 'wss',
+                'user_agent' => $request->userAgent(),
+                'event_type' => 'registered',
+                'registered_at' => now(),
+            ]);
+
+            \Log::info('WebPhone IP reported', [
+                'extension' => $extension->extension,
+                'public_ip' => $publicIp,
+                'user_agent' => $request->userAgent(),
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'public_ip' => $publicIp,
+            ]);
+        }
+
+        return response()->json([
+            'success' => false,
+            'message' => 'Could not determine public IP',
+            'detected_ip' => $publicIp,
+        ]);
+    }
 }
 
