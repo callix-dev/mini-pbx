@@ -190,6 +190,98 @@
             </div>
             @endauth
 
+            <!-- Waiting Calls Widget -->
+            @auth
+            @if(auth()->user()->extension || auth()->user()->hasAnyRole(['admin', 'qa', 'manager', 'super-admin']))
+            <div x-data="waitingCallsWidget()" x-init="init()" class="relative">
+                <button @click="open = !open" 
+                        class="relative p-2 rounded-lg text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"
+                        :class="{ 'text-orange-500 dark:text-orange-400': waitingCalls.length > 0 }">
+                    <!-- Queue/Phone Icon -->
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/>
+                    </svg>
+                    <!-- Badge -->
+                    <span x-show="waitingCalls.length > 0" x-cloak
+                          class="absolute -top-1 -right-1 min-w-[18px] h-[18px] flex items-center justify-center text-[10px] font-bold text-white bg-orange-500 rounded-full px-1"
+                          x-text="waitingCalls.length"></span>
+                </button>
+
+                <!-- Dropdown -->
+                <div x-cloak x-show="open" @click.away="open = false"
+                     x-transition:enter="transition ease-out duration-100"
+                     x-transition:enter-start="transform opacity-0 scale-95"
+                     x-transition:enter-end="transform opacity-100 scale-100"
+                     x-transition:leave="transition ease-in duration-75"
+                     x-transition:leave-start="transform opacity-100 scale-100"
+                     x-transition:leave-end="transform opacity-0 scale-95"
+                     class="absolute right-0 mt-2 w-80 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 z-50 overflow-hidden">
+                    
+                    <!-- Header -->
+                    <div class="px-4 py-3 bg-gradient-to-r from-orange-500 to-amber-500 text-white">
+                        <h3 class="font-semibold flex items-center">
+                            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/>
+                            </svg>
+                            Waiting Calls
+                        </h3>
+                        <p class="text-xs text-white/80" x-text="waitingCalls.length + ' call(s) waiting'"></p>
+                    </div>
+                    
+                    <!-- No calls -->
+                    <div x-show="waitingCalls.length === 0" class="p-4 text-center text-gray-500 dark:text-gray-400">
+                        <svg class="w-8 h-8 mx-auto mb-2 text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
+                        <p class="text-sm">No calls waiting</p>
+                    </div>
+                    
+                    <!-- Waiting calls list -->
+                    <div x-show="waitingCalls.length > 0" class="max-h-64 overflow-y-auto divide-y divide-gray-100 dark:divide-gray-700">
+                        <template x-for="call in waitingCalls" :key="call.channel">
+                            <div class="p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                                <div class="flex items-start justify-between">
+                                    <div class="flex-1 min-w-0">
+                                        <p class="text-sm font-medium text-gray-900 dark:text-white truncate" x-text="call.caller_name || call.caller_id"></p>
+                                        <p class="text-xs text-gray-500 dark:text-gray-400" x-show="call.caller_name" x-text="call.caller_id"></p>
+                                        <div class="flex items-center mt-1 space-x-2 text-xs text-gray-500 dark:text-gray-400">
+                                            <span class="inline-flex items-center px-1.5 py-0.5 rounded bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400" x-text="call.group_name"></span>
+                                            <span class="flex items-center">
+                                                <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                                </svg>
+                                                <span x-text="call.wait_formatted"></span>
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <button @click="pickupCall(call.channel)" 
+                                            class="ml-2 px-3 py-1.5 text-xs font-medium bg-green-500 hover:bg-green-600 text-white rounded-lg transition-colors flex items-center"
+                                            :disabled="pickingUp === call.channel">
+                                        <svg x-show="pickingUp !== call.channel" class="w-3.5 h-3.5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/>
+                                        </svg>
+                                        <svg x-show="pickingUp === call.channel" class="animate-spin w-3.5 h-3.5 mr-1" fill="none" viewBox="0 0 24 24">
+                                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                        </svg>
+                                        Pickup
+                                    </button>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+                    
+                    <!-- Footer link to dashboard -->
+                    <div class="px-4 py-2 bg-gray-50 dark:bg-gray-700/50 border-t border-gray-100 dark:border-gray-700">
+                        <a href="{{ route('dashboard') }}#waiting-calls" class="text-xs text-primary-600 dark:text-primary-400 hover:underline">
+                            View all on dashboard
+                        </a>
+                    </div>
+                </div>
+            </div>
+            @endif
+            @endauth
+
             <!-- Notifications -->
             <button class="relative p-2 rounded-lg text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700">
                 <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -450,6 +542,74 @@ function agentStatus(initialStatus) {
 
         showIncomingCallPopup(call) {
             window.dispatchEvent(new CustomEvent('incoming-call', { detail: call }));
+        }
+    }
+}
+
+function waitingCallsWidget() {
+    return {
+        open: false,
+        waitingCalls: [],
+        pickingUp: null,
+        pollInterval: null,
+        
+        init() {
+            // Initial fetch
+            this.fetchWaitingCalls();
+            
+            // Poll every 2 seconds
+            this.pollInterval = setInterval(() => this.fetchWaitingCalls(), 2000);
+        },
+        
+        async fetchWaitingCalls() {
+            try {
+                const response = await fetch('/api/waiting-calls');
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.success) {
+                        this.waitingCalls = data.waiting_calls || [];
+                    }
+                }
+            } catch (e) {
+                console.error('Failed to fetch waiting calls:', e);
+            }
+        },
+        
+        async pickupCall(channel) {
+            if (this.pickingUp) return;
+            
+            this.pickingUp = channel;
+            
+            try {
+                const response = await fetch(`/api/waiting-calls/${encodeURIComponent(channel)}/pickup`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    // Remove from list immediately
+                    this.waitingCalls = this.waitingCalls.filter(c => c.channel !== channel);
+                    this.open = false;
+                } else {
+                    alert(data.message || 'Failed to pickup call');
+                }
+            } catch (e) {
+                console.error('Pickup failed:', e);
+                alert('Failed to pickup call');
+            } finally {
+                this.pickingUp = null;
+            }
+        },
+        
+        destroy() {
+            if (this.pollInterval) {
+                clearInterval(this.pollInterval);
+            }
         }
     }
 }

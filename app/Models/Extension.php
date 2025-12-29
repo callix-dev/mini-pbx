@@ -26,7 +26,6 @@ class Extension extends Model
         'voicemail_email',
         'caller_id_name',
         'caller_id_number',
-        'pickup_group',
         'settings',
         'last_registered_at',
         'last_registered_ip',

@@ -633,3 +633,215 @@ If call logs aren't appearing:
    tail -f storage/logs/laravel.log | grep -i cdr
    ```
 
+---
+
+## Extension Groups (Queues) Configuration
+
+Extension Groups in Mini-PBX are synced to Asterisk Queues automatically. This enables advanced call distribution with various ring strategies.
+
+### Overview
+
+When you create or update an Extension Group in the Laravel application:
+
+1. **Laravel Observer** detects the change
+2. **AsteriskQueueSyncService** writes to `asterisk_queues` and `asterisk_queue_members` tables
+3. **Asterisk** reads queue configuration via Realtime ODBC
+4. **AMI Listener** tracks queue events (caller join, leave, agent connect)
+5. **Dashboard** displays waiting calls with pickup/redirect capabilities
+
+### Ring Strategies Supported
+
+| Laravel Strategy | Asterisk Strategy | Description |
+|------------------|-------------------|-------------|
+| `ringall` | `ringall` | Ring all available members simultaneously |
+| `hunt` | `linear` | Ring members in order, one at a time |
+| `memoryhunt` | `rrmemory` | Round-robin with memory |
+| `leastrecent` | `leastrecent` | Ring member with longest idle time |
+| `fewestcalls` | `fewestcalls` | Ring member who answered fewest calls |
+| `random` | `random` | Ring a random member |
+
+### Database Tables
+
+The following tables store queue configuration for Asterisk Realtime:
+
+#### `asterisk_queues`
+
+| Column | Purpose |
+|--------|---------|
+| `name` | Queue name (e.g., `extgroup_1`) |
+| `strategy` | Ring strategy |
+| `timeout` | Member ring timeout |
+| `musicclass` | Music on hold class |
+| `extension_group_id` | Link to Laravel ExtensionGroup |
+
+#### `asterisk_queue_members`
+
+| Column | Purpose |
+|--------|---------|
+| `queue_name` | Queue name |
+| `interface` | PJSIP/extension |
+| `membername` | Display name |
+| `penalty` | Priority (lower = higher priority) |
+| `paused` | Member paused status |
+
+### Dialplan Configuration
+
+The dialplan routes calls to extension groups via the `[extgroup-handler]` context:
+
+```ini
+[extgroup-handler]
+exten => _X,1,NoOp(Extension Group ${EXTEN})
+ same => n,Set(QUEUE_NAME=extgroup_${EXTEN})
+ same => n,Queue(${QUEUE_NAME},tTkK,,,300)
+ same => n,Hangup()
+```
+
+### FUNC_ODBC Functions
+
+Create `/etc/asterisk/func_odbc.conf` with these functions for dynamic routing:
+
+```ini
+[DID_DESTINATION]
+dsn=asterisk
+readsql=SELECT destination_type || ',' || destination_id FROM dids WHERE number='${ARG1}' AND is_active=true
+
+[EXTGROUP_NAME]
+dsn=asterisk
+readsql=SELECT name FROM extension_groups WHERE id='${ARG1}' AND is_active=true
+
+[EXTGROUP_STRATEGY]
+dsn=asterisk
+readsql=SELECT ring_strategy FROM extension_groups WHERE id='${ARG1}'
+```
+
+### Realtime Configuration
+
+Add to `/etc/asterisk/extconfig.conf`:
+
+```ini
+[settings]
+; Existing PJSIP mappings...
+
+; Queue Realtime mappings
+queues => odbc,asterisk,asterisk_queues
+queue_members => odbc,asterisk,asterisk_queue_members
+```
+
+### Laravel Commands
+
+#### Sync All Extension Groups
+
+```bash
+php artisan tinker --execute="
+    \App\Services\Asterisk\AsteriskQueueSyncService::new()->syncAllExtensionGroups();
+"
+```
+
+### Waiting Calls UI
+
+The dashboard includes a **Waiting Calls** panel that shows:
+
+- Caller ID and name
+- Group/queue name
+- Wait time
+- **Pickup** button (answer the call)
+- **Redirect** button (Admin/QA/Manager only - move to another group)
+
+#### API Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/waiting-calls` | GET | Get waiting calls (filtered by user role) |
+| `/api/waiting-calls/{channel}/pickup` | POST | Answer a waiting call |
+| `/api/waiting-calls/{channel}/redirect` | POST | Redirect to another group |
+| `/api/waiting-calls/groups` | GET | Get available groups (admin only) |
+
+### AMI Queue Events
+
+The AMI Listener monitors these events:
+
+| Event | Action |
+|-------|--------|
+| `QueueCallerJoin` | Caller added to waiting calls cache |
+| `QueueCallerLeave` | Caller removed from cache |
+| `QueueCallerAbandon` | Caller hung up, removed from cache |
+| `AgentConnect` | Agent answered, removed from cache |
+
+### Verification
+
+Check queue configuration:
+
+```bash
+# List queues
+asterisk -rx "queue show"
+
+# Show specific queue
+asterisk -rx "queue show extgroup_1"
+
+# Check queue members
+asterisk -rx "queue show members"
+```
+
+Check database:
+
+```sql
+-- List all queues
+SELECT name, strategy, timeout FROM asterisk_queues;
+
+-- List queue members
+SELECT queue_name, interface, membername, penalty FROM asterisk_queue_members;
+```
+
+### Troubleshooting
+
+#### Queues Not Loading
+
+1. Check Realtime configuration:
+   ```bash
+   asterisk -rx "realtime show"
+   ```
+
+2. Verify ODBC connection:
+   ```bash
+   isql asterisk -v
+   ```
+
+3. Check if queues exist in database:
+   ```sql
+   SELECT * FROM asterisk_queues;
+   ```
+
+4. Reload queues:
+   ```bash
+   asterisk -rx "queue reload all"
+   ```
+
+#### Callers Not Entering Queue
+
+1. Check dialplan is routing correctly:
+   ```bash
+   asterisk -rx "dialplan show extgroup-handler"
+   ```
+
+2. Enable queue debugging:
+   ```bash
+   asterisk -rx "queue set debug on"
+   ```
+
+#### Waiting Calls Not Showing
+
+1. Verify AMI Listener is running:
+   ```bash
+   php artisan ami:listen --debug
+   ```
+
+2. Check if queue events are being sent:
+   ```bash
+   # In AMI, you should see QueueCallerJoin events
+   ```
+
+3. Check cache:
+   ```bash
+   php artisan tinker --execute="print_r(\Cache::get('waiting_calls'));"
+   ```
+

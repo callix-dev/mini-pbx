@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\ExtensionStatusController;
+use App\Http\Controllers\Api\WaitingCallsController;
 use App\Http\Controllers\Api\WebPhoneController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -97,5 +98,29 @@ Route::middleware(['web', 'auth'])->prefix('dashboard')->group(function () {
     
     // Reset stale extension statuses
     Route::post('/reset-stale', [DashboardController::class, 'resetStaleStatuses']);
+});
+
+/*
+|--------------------------------------------------------------------------
+| Waiting Calls API Routes
+|--------------------------------------------------------------------------
+|
+| Real-time waiting calls in extension groups (queues)
+| Used for dashboard and header widget
+|
+*/
+
+Route::middleware(['web', 'auth'])->prefix('waiting-calls')->group(function () {
+    // Get waiting calls (filtered by user's role/groups)
+    Route::get('/', [WaitingCallsController::class, 'index']);
+    
+    // Pickup a waiting call (redirect to agent's extension)
+    Route::post('/{channel}/pickup', [WaitingCallsController::class, 'pickup'])->where('channel', '.*');
+    
+    // Redirect a waiting call to another group (Admin/QA/Manager only)
+    Route::post('/{channel}/redirect', [WaitingCallsController::class, 'redirect'])->where('channel', '.*');
+    
+    // Get all extension groups (for redirect dropdown)
+    Route::get('/groups', [WaitingCallsController::class, 'groups']);
 });
 

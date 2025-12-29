@@ -65,8 +65,6 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
         // Extension Groups
         Route::resource('extension-groups', ExtensionGroupController::class);
-        Route::get('extension-groups/{extensionGroup}/live-status', [ExtensionGroupController::class, 'liveStatus'])->name('extension-groups.live-status');
-        Route::post('extension-groups/{extensionGroup}/reset-stats', [ExtensionGroupController::class, 'resetStats'])->name('extension-groups.reset-stats');
 
         // DIDs
         Route::resource('dids', DidController::class);

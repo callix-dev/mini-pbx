@@ -159,8 +159,11 @@ class AmiListener extends Command
             'Dial' => $this->handleDial($event),
             'AgentLogin', 'AgentLogoff' => $this->handleAgentLogin($event),
             'QueueMemberStatus' => $this->handleQueueMemberStatus($event),
+            // Queue Events - for waiting calls tracking
             'QueueCallerJoin' => $this->handleQueueCallerJoin($event),
             'QueueCallerLeave' => $this->handleQueueCallerLeave($event),
+            'QueueCallerAbandon' => $this->handleQueueCallerAbandon($event),
+            'AgentConnect' => $this->handleAgentConnect($event),
             'DeviceStateChange' => $this->handleDeviceStateChange($event),
             // PJSIP Registration Events
             'ContactStatus' => $this->handleContactStatus($event),
@@ -583,15 +586,38 @@ class AmiListener extends Command
         $queueName = $event['Queue'] ?? null;
         $position = $event['Position'] ?? 0;
         $count = $event['Count'] ?? 0;
+        $channel = $event['Channel'] ?? null;
+        $callerId = $event['CallerIDNum'] ?? null;
+        $callerIdName = $event['CallerIDName'] ?? null;
+        $uniqueId = $event['Uniqueid'] ?? null;
 
         if (!$queueName) {
             return;
+        }
+
+        // Cache the waiting call
+        $waitingCall = [
+            'channel' => $channel,
+            'unique_id' => $uniqueId,
+            'caller_id' => $callerId,
+            'caller_name' => $callerIdName,
+            'queue_name' => $queueName,
+            'position' => (int) $position,
+            'joined_at' => now()->toIso8601String(),
+            'did' => $this->activeCalls[$uniqueId]['destination'] ?? null,
+        ];
+
+        $this->cacheWaitingCall($queueName, $channel, $waitingCall);
+
+        if ($this->option('debug')) {
+            $this->info("Queue {$queueName}: Caller {$callerId} joined at position {$position}");
         }
 
         broadcast(new QueueUpdated([
             'queue_name' => $queueName,
             'waiting' => $count,
             'event' => 'caller_join',
+            'caller' => $waitingCall,
         ]));
     }
 
@@ -599,16 +625,151 @@ class AmiListener extends Command
     {
         $queueName = $event['Queue'] ?? null;
         $count = $event['Count'] ?? 0;
+        $channel = $event['Channel'] ?? null;
+        $uniqueId = $event['Uniqueid'] ?? null;
 
         if (!$queueName) {
             return;
+        }
+
+        // Remove from waiting calls cache
+        $this->uncacheWaitingCall($queueName, $channel);
+
+        if ($this->option('debug')) {
+            $this->info("Queue {$queueName}: Caller left, {$count} remaining");
         }
 
         broadcast(new QueueUpdated([
             'queue_name' => $queueName,
             'waiting' => $count,
             'event' => 'caller_leave',
+            'channel' => $channel,
         ]));
+    }
+
+    /**
+     * Handle QueueCallerAbandon event - caller hung up while waiting
+     */
+    private function handleQueueCallerAbandon(array $event): void
+    {
+        $queueName = $event['Queue'] ?? null;
+        $channel = $event['Channel'] ?? null;
+        $position = $event['Position'] ?? 0;
+        $originalPosition = $event['OriginalPosition'] ?? 0;
+        $holdTime = $event['HoldTime'] ?? 0;
+
+        if (!$queueName) {
+            return;
+        }
+
+        // Remove from waiting calls cache
+        $this->uncacheWaitingCall($queueName, $channel);
+
+        if ($this->option('debug')) {
+            $this->info("Queue {$queueName}: Caller abandoned after {$holdTime}s at position {$position}");
+        }
+
+        broadcast(new QueueUpdated([
+            'queue_name' => $queueName,
+            'event' => 'caller_abandon',
+            'channel' => $channel,
+            'hold_time' => $holdTime,
+        ]));
+    }
+
+    /**
+     * Handle AgentConnect event - agent answered a queue call
+     */
+    private function handleAgentConnect(array $event): void
+    {
+        $queueName = $event['Queue'] ?? null;
+        $channel = $event['Channel'] ?? null;
+        $memberName = $event['MemberName'] ?? null;
+        $interface = $event['Interface'] ?? null;
+        $holdTime = $event['HoldTime'] ?? 0;
+        $ringTime = $event['RingTime'] ?? 0;
+
+        if (!$queueName) {
+            return;
+        }
+
+        // Remove from waiting calls cache - call was answered
+        $this->uncacheWaitingCall($queueName, $channel);
+
+        // Extract extension from interface (PJSIP/1001)
+        $agentExtension = null;
+        if ($interface && str_starts_with($interface, 'PJSIP/')) {
+            $agentExtension = str_replace('PJSIP/', '', $interface);
+        }
+
+        if ($this->option('debug')) {
+            $this->info("Queue {$queueName}: Agent {$agentExtension} answered after {$holdTime}s hold, {$ringTime}s ring");
+        }
+
+        broadcast(new QueueUpdated([
+            'queue_name' => $queueName,
+            'event' => 'agent_connect',
+            'channel' => $channel,
+            'agent_extension' => $agentExtension,
+            'hold_time' => $holdTime,
+            'ring_time' => $ringTime,
+        ]));
+    }
+
+    /**
+     * Cache a waiting call for the dashboard
+     */
+    private function cacheWaitingCall(string $queueName, string $channel, array $callData): void
+    {
+        $waitingCalls = Cache::get('waiting_calls', []);
+        
+        if (!isset($waitingCalls[$queueName])) {
+            $waitingCalls[$queueName] = [];
+        }
+        
+        $waitingCalls[$queueName][$channel] = $callData;
+        
+        Cache::put('waiting_calls', $waitingCalls, now()->addHours(2));
+    }
+
+    /**
+     * Remove a waiting call from cache
+     */
+    private function uncacheWaitingCall(string $queueName, ?string $channel): void
+    {
+        if (!$channel) {
+            return;
+        }
+
+        $waitingCalls = Cache::get('waiting_calls', []);
+        
+        if (isset($waitingCalls[$queueName][$channel])) {
+            unset($waitingCalls[$queueName][$channel]);
+            
+            // Clean up empty queue entries
+            if (empty($waitingCalls[$queueName])) {
+                unset($waitingCalls[$queueName]);
+            }
+            
+            Cache::put('waiting_calls', $waitingCalls, now()->addHours(2));
+        }
+    }
+
+    /**
+     * Get all waiting calls (for API)
+     */
+    public static function getWaitingCalls(): array
+    {
+        return Cache::get('waiting_calls', []);
+    }
+
+    /**
+     * Get waiting calls for a specific queue
+     */
+    public static function getQueueWaitingCalls(string $queueName): array
+    {
+        $waitingCalls = Cache::get('waiting_calls', []);
+        return $waitingCalls[$queueName] ?? [];
     }
 
     private function handleDeviceStateChange(array $event): void
