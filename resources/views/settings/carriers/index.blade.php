@@ -10,22 +10,37 @@
                     Manage outbound and inbound SIP carriers
                 </p>
             </div>
-            <div class="flex items-center space-x-3">
-                <a href="{{ route('carriers.quick-setup') }}" class="btn-secondary">
-                    <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
-                    </svg>
-                    Quick Setup
-                </a>
-                <a href="{{ route('carriers.create') }}" class="btn-primary">
-                    <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
-                    </svg>
-                    New Carrier
-                </a>
-            </div>
+            <a href="{{ route('carriers.create') }}" class="btn-primary">
+                <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
+                </svg>
+                New Carrier
+            </a>
         </div>
     </x-slot>
+
+    <!-- Quick Setup Banner -->
+    <div class="mb-6 bg-gradient-to-r from-primary-500 to-accent-500 rounded-xl p-6 text-white">
+        <div class="flex flex-col md:flex-row items-center justify-between gap-4">
+            <div class="flex items-center space-x-4">
+                <div class="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center">
+                    <svg class="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                    </svg>
+                </div>
+                <div>
+                    <h3 class="text-lg font-semibold">Quick Setup</h3>
+                    <p class="text-white/80 text-sm">Configure popular providers like Twilio, Telnyx, Vonage with pre-filled settings</p>
+                </div>
+            </div>
+            <a href="{{ route('carriers.quick-setup') }}" class="inline-flex items-center px-5 py-2.5 bg-white text-primary-600 font-semibold rounded-lg hover:bg-white/90 transition-colors shadow-lg">
+                <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                </svg>
+                Start Quick Setup
+            </a>
+        </div>
+    </div>
 
     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
         @forelse($carriers ?? [] as $carrier)
@@ -115,12 +130,19 @@
                     </svg>
                     <h3 class="mt-2 text-sm font-medium text-gray-900 dark:text-white">No carriers configured</h3>
                     <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Add carriers to enable inbound and outbound calling.</p>
-                    <div class="mt-6">
-                        <a href="{{ route('carriers.create') }}" class="btn-primary">
+                    <div class="mt-6 flex flex-col sm:flex-row items-center justify-center gap-3">
+                        <a href="{{ route('carriers.quick-setup') }}" class="btn-primary">
+                            <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                            </svg>
+                            Quick Setup
+                        </a>
+                        <span class="text-gray-400 dark:text-gray-500">or</span>
+                        <a href="{{ route('carriers.create') }}" class="btn-secondary">
                             <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
                             </svg>
-                            New Carrier
+                            Manual Setup
                         </a>
                     </div>
                 </div>
