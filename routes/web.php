@@ -116,6 +116,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
         // Carriers
         Route::resource('carriers', CarrierController::class);
         Route::patch('carriers/{carrier}/toggle-status', [CarrierController::class, 'toggleStatus'])->name('carriers.toggle-status');
+        Route::get('carriers-quick-setup', [CarrierController::class, 'quickSetup'])->name('carriers.quick-setup');
+        Route::post('carriers-quick-setup', [CarrierController::class, 'quickSetupStore'])->name('carriers.quick-setup.store');
+        Route::post('carriers/{carrier}/test-connection', [CarrierController::class, 'testConnection'])->name('carriers.test-connection');
 
         // Break Codes
         Route::resource('break-codes', BreakCodeController::class);

@@ -160,11 +160,24 @@
                         </div>
                     </div>
 
-                    <div>
-                        <label for="priority" class="form-label">Priority</label>
-                        <input type="number" name="priority" id="priority" value="{{ old('priority', 1) }}" 
-                               class="form-input" min="0" max="100">
-                        <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Lower number = higher priority (0-100)</p>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                            <label for="priority" class="form-label">Priority</label>
+                            <input type="number" name="priority" id="priority" value="{{ old('priority', 1) }}" 
+                                   class="form-input" min="0" max="100">
+                            <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Lower number = higher priority (0-100)</p>
+                        </div>
+
+                        <div>
+                            <label for="backup_carrier_id" class="form-label">Failover Carrier</label>
+                            <select name="backup_carrier_id" id="backup_carrier_id" class="form-select">
+                                <option value="">None</option>
+                                @foreach($otherCarriers ?? [] as $id => $name)
+                                    <option value="{{ $id }}" {{ old('backup_carrier_id') == $id ? 'selected' : '' }}>{{ $name }}</option>
+                                @endforeach
+                            </select>
+                            <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Route to this carrier if primary fails</p>
+                        </div>
                     </div>
 
                     <div class="flex items-center">

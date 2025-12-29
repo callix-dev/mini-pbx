@@ -4,16 +4,25 @@ namespace App\Http\Controllers\Settings;
 
 use App\Http\Controllers\Controller;
 use App\Models\Carrier;
+use App\Models\CarrierTemplate;
 use App\Models\AuditLog;
+use App\Services\Carrier\CarrierTemplateService;
+use App\Services\Carrier\CarrierTestService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\View\View;
 
 class CarrierController extends Controller
 {
+    public function __construct(
+        protected CarrierTemplateService $templateService,
+        protected CarrierTestService $testService
+    ) {}
+
     public function index(Request $request): View
     {
-        $query = Carrier::withCount('dids');
+        $query = Carrier::withCount('dids')->with('backupCarrier');
 
         if ($request->filled('type')) {
             $query->where('type', $request->type);
@@ -26,11 +35,14 @@ class CarrierController extends Controller
 
     public function create(): View
     {
+        $otherCarriers = Carrier::where('type', 'outbound')->pluck('name', 'id');
+        
         return view('settings.carriers.create', [
             'types' => Carrier::TYPES,
             'authTypes' => Carrier::AUTH_TYPES,
             'transports' => Carrier::TRANSPORTS,
             'defaultCodecs' => Carrier::DEFAULT_CODECS,
+            'otherCarriers' => $otherCarriers,
         ]);
     }
 
@@ -55,12 +67,17 @@ class CarrierController extends Controller
 
     public function edit(Carrier $carrier): View
     {
+        $otherCarriers = Carrier::where('type', 'outbound')
+            ->where('id', '!=', $carrier->id)
+            ->pluck('name', 'id');
+            
         return view('settings.carriers.edit', [
             'carrier' => $carrier,
             'types' => Carrier::TYPES,
             'authTypes' => Carrier::AUTH_TYPES,
             'transports' => Carrier::TRANSPORTS,
             'defaultCodecs' => Carrier::DEFAULT_CODECS,
+            'otherCarriers' => $otherCarriers,
         ]);
     }
 
@@ -100,6 +117,98 @@ class CarrierController extends Controller
             ->with('success', 'Carrier status updated.');
     }
 
+    /**
+     * Quick Setup - Provider selection page
+     */
+    public function quickSetup(): View
+    {
+        $providers = $this->templateService->getTemplatesGroupedByProvider();
+        $templates = [];
+        
+        foreach ($providers as $slug => $provider) {
+            $templates[$slug] = [
+                'name' => $provider['name'],
+                'logo' => $provider['logo'],
+                'templates' => [],
+            ];
+            foreach ($provider['templates'] as $direction => $template) {
+                $templates[$slug]['templates'][$direction] = $template;
+            }
+        }
+
+        return view('settings.carriers.quick-setup', [
+            'providers' => $providers,
+            'templates' => $templates,
+        ]);
+    }
+
+    /**
+     * Quick Setup - Store carrier from template
+     */
+    public function quickSetupStore(Request $request): JsonResponse
+    {
+        $request->validate([
+            'provider_slug' => 'required|string',
+            'direction' => 'required|in:inbound,outbound',
+        ]);
+
+        $template = $this->templateService->getTemplate(
+            $request->provider_slug,
+            $request->direction
+        );
+
+        if (!$template) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Template not found.',
+            ], 404);
+        }
+
+        // Validate input based on template requirements
+        $authType = $request->auth_type ?? $template->getDefaultAuthType();
+        $errors = $this->templateService->validateInput($template, $request->all(), $authType);
+
+        if (!empty($errors)) {
+            return response()->json([
+                'success' => false,
+                'errors' => $errors,
+            ], 422);
+        }
+
+        try {
+            $carrier = $this->templateService->createCarrierFromTemplate(
+                $template,
+                $request->all(),
+                $request->name ?: null
+            );
+
+            AuditLog::log('created', $carrier, null, $carrier->toArray(), 
+                "Carrier created via Quick Setup ({$template->provider_name})");
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Carrier created successfully.',
+                'carrier' => $carrier,
+                'redirect' => route('carriers.index'),
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to create carrier: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Test carrier connection
+     */
+    public function testConnection(Carrier $carrier): JsonResponse
+    {
+        $result = $this->testService->testConnection($carrier);
+
+        return response()->json($result);
+    }
+
     private function validateCarrier(Request $request, ?Carrier $carrier = null): array
     {
         $rules = [
@@ -118,6 +227,7 @@ class CarrierController extends Controller
             'context' => 'required|string|max:255',
             'is_active' => 'boolean',
             'priority' => 'integer|min:0|max:100',
+            'backup_carrier_id' => 'nullable|exists:carriers,id',
         ];
 
         // Password not required if editing and not changing
@@ -134,6 +244,8 @@ class CarrierController extends Controller
         return $validated;
     }
 }
+
+
 
 
 
