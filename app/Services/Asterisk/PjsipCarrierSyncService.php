@@ -3,6 +3,7 @@
 namespace App\Services\Asterisk;
 
 use App\Models\Carrier;
+use App\Services\SettingsService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -11,7 +12,7 @@ class PjsipCarrierSyncService
     /**
      * Sync a carrier to Asterisk PJSIP tables
      */
-    public function syncCarrier(Carrier $carrier): void
+    public function syncCarrier(Carrier $carrier, bool $reloadPjsip = true): void
     {
         $endpointId = $carrier->getPjsipEndpointName();
 
@@ -31,6 +32,11 @@ class PjsipCarrierSyncService
                 'endpoint_id' => $endpointId,
                 'auth_type' => $carrier->auth_type,
             ]);
+
+            // Reload PJSIP in Asterisk to load the new configuration
+            if ($reloadPjsip) {
+                $this->reloadPjsip();
+            }
         } catch (\Exception $e) {
             DB::rollBack();
             Log::error('Failed to sync carrier to PJSIP', [
@@ -39,6 +45,65 @@ class PjsipCarrierSyncService
             ]);
             throw $e;
         }
+    }
+
+    /**
+     * Reload PJSIP module in Asterisk via AMI
+     */
+    public function reloadPjsip(): bool
+    {
+        try {
+            $settings = SettingsService::getAmiSettings();
+            
+            $socket = @fsockopen($settings['host'], $settings['port'], $errno, $errstr, 5);
+            if (!$socket) {
+                Log::warning('Could not connect to AMI for PJSIP reload', ['error' => $errstr]);
+                return false;
+            }
+
+            stream_set_timeout($socket, 5);
+            fgets($socket); // Read welcome
+
+            // Login
+            fwrite($socket, "Action: Login\r\nUsername: {$settings['username']}\r\nSecret: {$settings['password']}\r\n\r\n");
+            $this->readAmiResponse($socket);
+
+            // Reload PJSIP
+            fwrite($socket, "Action: Command\r\nCommand: pjsip reload\r\n\r\n");
+            $response = $this->readAmiResponse($socket);
+
+            // Logoff
+            fwrite($socket, "Action: Logoff\r\n\r\n");
+            fclose($socket);
+
+            Log::info('PJSIP reloaded via AMI');
+            return true;
+        } catch (\Exception $e) {
+            Log::warning('Failed to reload PJSIP via AMI', ['error' => $e->getMessage()]);
+            return false;
+        }
+    }
+
+    /**
+     * Read AMI response
+     */
+    private function readAmiResponse($socket): array
+    {
+        $response = [];
+        while (($line = fgets($socket)) !== false) {
+            $line = trim($line);
+            if ($line === '') {
+                if (!empty($response)) {
+                    return $response;
+                }
+                continue;
+            }
+            if (strpos($line, ': ') !== false) {
+                [$key, $value] = explode(': ', $line, 2);
+                $response[$key] = $value;
+            }
+        }
+        return $response;
     }
 
     /**
@@ -127,7 +192,7 @@ class PjsipCarrierSyncService
     /**
      * Delete carrier from PJSIP tables
      */
-    public function deleteCarrier(Carrier $carrier): void
+    public function deleteCarrier(Carrier $carrier, bool $reloadPjsip = true): void
     {
         $endpointId = $carrier->getPjsipEndpointName();
 
@@ -137,7 +202,14 @@ class PjsipCarrierSyncService
             // Delete in reverse order of dependencies
             DB::table('ps_registrations')->where('id', $endpointId)->delete();
             DB::table('ps_endpoint_id_ips')->where('id', $endpointId)->delete();
-            DB::table('ps_contacts')->where('aor', $endpointId)->delete();
+            
+            // ps_contacts may have different column names depending on schema
+            if (\Schema::hasColumn('ps_contacts', 'aor')) {
+                DB::table('ps_contacts')->where('aor', $endpointId)->delete();
+            } elseif (\Schema::hasColumn('ps_contacts', 'endpoint')) {
+                DB::table('ps_contacts')->where('endpoint', $endpointId)->delete();
+            }
+            
             DB::table('ps_aors')->where('id', $endpointId)->delete();
             DB::table('ps_auths')->where('id', $endpointId)->delete();
             DB::table('ps_endpoints')->where('id', $endpointId)->delete();
@@ -148,6 +220,11 @@ class PjsipCarrierSyncService
                 'carrier_id' => $carrier->id,
                 'endpoint_id' => $endpointId,
             ]);
+
+            // Reload PJSIP in Asterisk
+            if ($reloadPjsip) {
+                $this->reloadPjsip();
+            }
         } catch (\Exception $e) {
             DB::rollBack();
             Log::error('Failed to delete carrier from PJSIP', [
@@ -296,13 +373,19 @@ class PjsipCarrierSyncService
 
         foreach ($carriers as $carrier) {
             try {
-                $this->syncCarrier($carrier);
+                // Don't reload after each carrier, we'll reload once at the end
+                $this->syncCarrier($carrier, reloadPjsip: false);
             } catch (\Exception $e) {
                 Log::error('Failed to sync carrier', [
                     'carrier_id' => $carrier->id,
                     'error' => $e->getMessage(),
                 ]);
             }
+        }
+
+        // Reload PJSIP once after all carriers are synced
+        if ($carriers->isNotEmpty()) {
+            $this->reloadPjsip();
         }
     }
 }
