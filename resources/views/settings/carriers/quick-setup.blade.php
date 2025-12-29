@@ -20,6 +20,18 @@
     </x-slot>
 
     <div x-data="quickSetup()" x-init="init()">
+        <!-- Debug Info -->
+        @if(config('app.debug'))
+        <div class="mb-4 p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
+            <p class="text-sm text-yellow-800 dark:text-yellow-200">
+                <strong>Debug:</strong> Found {{ count($providers ?? []) }} providers, {{ \App\Models\CarrierTemplate::count() }} templates in DB
+            </p>
+            <p class="text-xs text-yellow-600 dark:text-yellow-400 mt-1">
+                Providers: {{ implode(', ', array_keys($providers ?? [])) }}
+            </p>
+        </div>
+        @endif
+
         <!-- Direction Tabs -->
         <div class="mb-6">
             <div class="border-b border-gray-200 dark:border-gray-700">
@@ -47,9 +59,16 @@
         <!-- Provider Cards Grid -->
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             @foreach($providers as $slug => $provider)
+                @php
+                    $hasOutbound = isset($provider['templates']['outbound']);
+                    $hasInbound = isset($provider['templates']['inbound']);
+                @endphp
                 <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden hover:shadow-md transition-shadow cursor-pointer group"
                      @click="openSetupModal('{{ $slug }}', direction)"
-                     x-show="hasTemplate('{{ $slug }}', direction)">
+                     x-show="(direction === 'outbound' && {{ $hasOutbound ? 'true' : 'false' }}) || (direction === 'inbound' && {{ $hasInbound ? 'true' : 'false' }})"
+                     x-transition:enter="transition ease-out duration-200"
+                     x-transition:enter-start="opacity-0 transform scale-95"
+                     x-transition:enter-end="opacity-100 transform scale-100">
                     <div class="p-6">
                         <div class="flex items-center space-x-4">
                             <!-- Provider Logo -->
@@ -328,16 +347,25 @@
                 submitting: false,
 
                 init() {
+                    console.log('QuickSetup init - templates:', this.templates);
+                    console.log('Template keys:', Object.keys(this.templates));
+                    
                     // Set initial direction from URL if present
                     const urlParams = new URLSearchParams(window.location.search);
                     if (urlParams.get('direction')) {
                         this.direction = urlParams.get('direction');
                     }
+                    
+                    // Debug each provider
+                    Object.keys(this.templates).forEach(slug => {
+                        console.log(`Provider ${slug}:`, this.hasTemplate(slug, 'outbound'), this.hasTemplate(slug, 'inbound'));
+                    });
                 },
 
                 hasTemplate(providerSlug, direction) {
                     const provider = this.templates[providerSlug];
-                    return provider && provider.templates && provider.templates[direction];
+                    const result = provider && provider.templates && provider.templates[direction];
+                    return result;
                 },
 
                 openSetupModal(providerSlug, direction) {
