@@ -54,19 +54,36 @@ class CarrierTestService
             $this->disconnect();
 
             // Determine overall success
-            $success = $endpointCheck['exists'] && 
-                       $aorCheck['exists'] && 
-                       ($qualifyCheck['reachable'] ?? false);
+            $endpointExists = $endpointCheck['exists'] ?? false;
+            $aorExists = $aorCheck['exists'] ?? false;
+            $isReachable = $qualifyCheck['reachable'] ?? false;
+            $isRegistered = $results['registration']['registered'] ?? null;
 
+            // For outbound registration trunks, registration status is important
             if ($carrier->usesRegistration() && $carrier->type === 'outbound') {
-                $success = $success && ($results['registration']['registered'] ?? false);
+                $success = $endpointExists && $aorExists && $isRegistered;
+                
+                if ($endpointExists && $aorExists && !$isRegistered) {
+                    $message = 'Endpoint configured but not registered with provider. Check credentials.';
+                } elseif ($success && !$isReachable) {
+                    $message = 'Registered successfully but provider not responding to OPTIONS.';
+                    $success = true; // Still consider success if registered
+                } elseif ($success) {
+                    $message = 'Connection test successful! Carrier is registered and reachable.';
+                } else {
+                    $message = 'Connection test failed. Check details for more information.';
+                }
+            } else {
+                // For IP auth or inbound trunks
+                $success = $endpointExists && $aorExists;
+                $message = $success 
+                    ? ($isReachable ? 'Connection test successful!' : 'Endpoint configured. Reachability depends on provider.')
+                    : 'Connection test failed. Check details for more information.';
             }
 
             return [
                 'success' => $success,
-                'message' => $success 
-                    ? 'Connection test successful! Carrier is reachable.' 
-                    : 'Connection test failed. Check details for more information.',
+                'message' => $message,
                 'details' => $results,
             ];
         } catch (\Exception $e) {
@@ -93,23 +110,46 @@ class CarrierTestService
             'Endpoint' => $endpointId,
         ]);
 
-        // Read response
+        // Read response - may be Success or Error
         $response = $this->readResponse();
-        $exists = ($response['Response'] ?? '') === 'Success';
+        $responseType = $response['Response'] ?? '';
+        
+        // Some AMI versions return different responses
+        $exists = $responseType === 'Success' || 
+                  (isset($response['Event']) && $response['Event'] === 'EndpointDetail');
 
-        // Read additional data events
-        if ($exists) {
-            while (true) {
-                $event = $this->readResponse();
-                if (!$event || ($event['Event'] ?? '') === 'EndpointDetailComplete') {
-                    break;
-                }
+        $deviceState = null;
+        $endpointDetails = [];
+
+        // Read additional data events until EndpointDetailComplete
+        $maxReads = 50; // Prevent infinite loop
+        $reads = 0;
+        while ($reads < $maxReads) {
+            $event = $this->readResponse();
+            $reads++;
+            
+            if (!$event) break;
+            
+            $eventType = $event['Event'] ?? '';
+            
+            // EndpointDetail event contains the endpoint info
+            if ($eventType === 'EndpointDetail') {
+                $exists = true;
+                $deviceState = $event['DeviceState'] ?? null;
+                $endpointDetails = $event;
+            }
+            
+            if ($eventType === 'EndpointDetailComplete') {
+                break;
             }
         }
 
         return [
             'exists' => $exists,
-            'message' => $exists ? 'Endpoint found' : 'Endpoint not found',
+            'device_state' => $deviceState,
+            'message' => $exists 
+                ? 'Endpoint found' . ($deviceState ? " (State: {$deviceState})" : '')
+                : 'Endpoint not found',
         ];
     }
 
