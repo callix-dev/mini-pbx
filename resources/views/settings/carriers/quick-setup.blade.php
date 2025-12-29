@@ -20,18 +20,6 @@
     </x-slot>
 
     <div x-data="quickSetup()" x-init="init()">
-        <!-- Debug Info -->
-        @if(config('app.debug'))
-        <div class="mb-4 p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
-            <p class="text-sm text-yellow-800 dark:text-yellow-200">
-                <strong>Debug:</strong> Found {{ count($providers ?? []) }} providers, {{ \App\Models\CarrierTemplate::count() }} templates in DB
-            </p>
-            <p class="text-xs text-yellow-600 dark:text-yellow-400 mt-1">
-                Providers: {{ implode(', ', array_keys($providers ?? [])) }}
-            </p>
-        </div>
-        @endif
-
         <!-- Direction Tabs -->
         <div class="mb-6">
             <div class="border-b border-gray-200 dark:border-gray-700">
@@ -275,6 +263,19 @@
                                            placeholder="SIP password">
                                 </div>
                             </div>
+                            
+                            <!-- From Domain (for providers that require it) -->
+                            <div class="mt-4" x-show="isFieldRequired('from_domain')">
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                    SIP Domain <span class="text-red-500">*</span>
+                                </label>
+                                <input type="text" x-model="formData.from_domain" 
+                                       class="form-input w-full"
+                                       placeholder="sip.provider.com">
+                                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                                    The domain to use in SIP From header (usually provided by your carrier)
+                                </p>
+                            </div>
                         </div>
 
                         <!-- Provider-specific fields -->
@@ -347,19 +348,11 @@
                 submitting: false,
 
                 init() {
-                    console.log('QuickSetup init - templates:', this.templates);
-                    console.log('Template keys:', Object.keys(this.templates));
-                    
                     // Set initial direction from URL if present
                     const urlParams = new URLSearchParams(window.location.search);
                     if (urlParams.get('direction')) {
                         this.direction = urlParams.get('direction');
                     }
-                    
-                    // Debug each provider
-                    Object.keys(this.templates).forEach(slug => {
-                        console.log(`Provider ${slug}:`, this.hasTemplate(slug, 'outbound'), this.hasTemplate(slug, 'inbound'));
-                    });
                 },
 
                 hasTemplate(providerSlug, direction) {
@@ -388,6 +381,7 @@
                         transport: defaults.transport || 'udp',
                         username: '',
                         password: '',
+                        from_domain: defaults.from_domain || '',
                     };
 
                     // Initialize provider-specific fields
@@ -453,6 +447,7 @@
                         authorization_id: 'Authorization ID',
                         outbound_proxy: 'sip10.provider.com:5090',
                         api_key: 'Your API Key',
+                        from_domain: 'sip.provider.com',
                     };
                     return placeholders[field] || '';
                 },
@@ -467,6 +462,7 @@
                         authorization_id: 'May be the same as your username',
                         outbound_proxy: 'Required for proper call routing',
                         api_key: 'Found in your provider dashboard',
+                        from_domain: 'The SIP domain provided by your carrier for authentication',
                     };
                     return help[field] || '';
                 },

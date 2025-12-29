@@ -82,11 +82,16 @@ class CarrierTemplateService
         }
 
         // Merge user input (overrides template defaults)
-        $mergeFields = ['host', 'port', 'transport', 'username', 'password', 'from_domain', 'from_user', 'codecs', 'max_channels'];
+        $mergeFields = ['host', 'port', 'transport', 'username', 'password', 'from_domain', 'from_user', 'codecs', 'max_channels', 'context'];
         foreach ($mergeFields as $field) {
             if (isset($userInput[$field]) && $userInput[$field] !== '') {
                 $config[$field] = $userInput[$field];
             }
+        }
+        
+        // For credentials auth with from_domain, ensure from_domain is set
+        if (!empty($userInput['from_domain'])) {
+            $config['from_domain'] = $userInput['from_domain'];
         }
 
         // Build provider_config from provider-specific fields
@@ -226,6 +231,7 @@ class CarrierTemplateService
             'password' => 'Your SIP password or secret',
             'host' => 'SIP server hostname or IP address',
             'port' => 'SIP port (usually 5060 for UDP/TCP, 5061 for TLS)',
+            'from_domain' => 'The SIP domain for authentication (provided by your carrier)',
             'authorization_id' => 'Authorization ID (may be same as username for some providers)',
             'outbound_proxy' => 'Outbound proxy server for SIP signaling',
             'trunk_sid' => 'Your Twilio Trunk SID (starts with TK)',

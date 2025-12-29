@@ -177,12 +177,13 @@ class CarrierTemplateSeeder extends Seeder
                 'eu' => ['host' => 'sip-eu.nexmo.com', 'label' => 'Europe'],
                 'apac' => ['host' => 'sip-ap.nexmo.com', 'label' => 'Asia Pacific'],
             ],
-            'auth_types' => null, // IP auth only
+            'auth_types' => ['credentials', 'ip'], // Supports both auth types
             'provider_fields' => ['api_key', 'api_secret'],
             'help_links' => [
                 'setup' => 'https://developer.vonage.com/en/voice/sip/overview',
                 'credentials' => 'https://dashboard.nexmo.com/settings',
                 'ip_acl' => 'https://dashboard.nexmo.com/sip/your-numbers',
+                'sip_connect' => 'https://dashboard.nexmo.com/sip/your-numbers',
             ],
             'sort_order' => 3,
             'is_active' => true,
@@ -191,29 +192,35 @@ class CarrierTemplateSeeder extends Seeder
         return [
             array_merge($baseConfig, [
                 'direction' => CarrierTemplate::DIRECTION_INBOUND,
-                'description' => 'Receive calls from Vonage (Nexmo). Uses IP-based authentication - whitelist your PBX IP in Vonage dashboard.',
+                'description' => 'Receive calls from Vonage (Nexmo). Supports credentials (username/password/domain) or IP-based authentication.',
                 'default_config' => [
                     'host' => 'sip-us.nexmo.com',
                     'port' => 5060,
                     'transport' => 'udp',
                     'auth_type' => 'ip',
                     'context' => 'from-trunk',
-                    'codecs' => ['ulaw', 'alaw'],
+                    'codecs' => ['ulaw', 'alaw', 'g722'],
                 ],
-                'required_fields' => [],
+                'required_fields' => [
+                    'credentials' => ['username', 'password', 'from_domain'],
+                    'ip' => [],
+                ],
             ]),
             array_merge($baseConfig, [
                 'direction' => CarrierTemplate::DIRECTION_OUTBOUND,
-                'description' => 'Make outbound calls through Vonage (Nexmo). Configure your PBX IP in Vonage for IP authentication.',
+                'description' => 'Make outbound calls through Vonage (Nexmo). Supports credentials (username/password/domain) or IP-based authentication.',
                 'default_config' => [
                     'host' => 'sip-us.nexmo.com',
                     'port' => 5060,
                     'transport' => 'udp',
-                    'auth_type' => 'ip',
+                    'auth_type' => 'registration',
                     'context' => 'from-internal',
-                    'codecs' => ['ulaw', 'alaw'],
+                    'codecs' => ['ulaw', 'alaw', 'g722'],
                 ],
-                'required_fields' => [],
+                'required_fields' => [
+                    'credentials' => ['username', 'password', 'from_domain'],
+                    'ip' => [],
+                ],
             ]),
         ];
     }
