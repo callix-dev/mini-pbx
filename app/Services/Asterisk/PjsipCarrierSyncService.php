@@ -46,7 +46,9 @@ class PjsipCarrierSyncService
      */
     private function syncRegistrationCarrier(Carrier $carrier, string $endpointId): void
     {
-        $codecsString = is_array($carrier->codecs) ? implode(',', $carrier->codecs) : $carrier->codecs;
+        // Default codecs if not specified
+        $codecs = $carrier->codecs ?: Carrier::DEFAULT_CODECS;
+        $codecsString = is_array($codecs) ? implode(',', $codecs) : $codecs;
 
         // Create/update endpoint
         $this->upsertEndpoint($endpointId, [
@@ -90,7 +92,9 @@ class PjsipCarrierSyncService
      */
     private function syncIpCarrier(Carrier $carrier, string $endpointId): void
     {
-        $codecsString = is_array($carrier->codecs) ? implode(',', $carrier->codecs) : $carrier->codecs;
+        // Default codecs if not specified
+        $codecs = $carrier->codecs ?: Carrier::DEFAULT_CODECS;
+        $codecsString = is_array($codecs) ? implode(',', $codecs) : $codecs;
 
         // Create/update endpoint (no auth for IP-based)
         $this->upsertEndpoint($endpointId, [
