@@ -13,25 +13,46 @@ class SipLogController extends Controller
 {
     public function index(Request $request): View
     {
-        // Get summary statistics
+        // Get summary statistics with optimized single query
         $today = Carbon::today();
         $thisWeek = Carbon::now()->startOfWeek();
         $thisMonth = Carbon::now()->startOfMonth();
 
+        // Single optimized query for today's stats
+        $todayStats = SipSecurityLog::whereDate('event_time', $today)
+            ->selectRaw("
+                COUNT(*) as total,
+                SUM(CASE WHEN status = 'REJECTED' THEN 1 ELSE 0 END) as rejected,
+                SUM(CASE WHEN status = 'ALLOWED' THEN 1 ELSE 0 END) as allowed,
+                SUM(CASE WHEN direction = 'inbound' THEN 1 ELSE 0 END) as inbound,
+                SUM(CASE WHEN direction = 'outbound' THEN 1 ELSE 0 END) as outbound,
+                COUNT(DISTINCT source_ip) as unique_ips
+            ")
+            ->first();
+
+        // Rejected counts for week and month (separate queries for index usage)
+        $rejectedWeek = SipSecurityLog::where('event_time', '>=', $thisWeek)
+            ->where('status', 'REJECTED')
+            ->count();
+        
+        $rejectedMonth = SipSecurityLog::where('event_time', '>=', $thisMonth)
+            ->where('status', 'REJECTED')
+            ->count();
+
         $stats = [
-            'total_today' => SipSecurityLog::whereDate('event_time', $today)->count(),
-            'rejected_today' => SipSecurityLog::whereDate('event_time', $today)->rejected()->count(),
-            'allowed_today' => SipSecurityLog::whereDate('event_time', $today)->allowed()->count(),
-            'inbound_today' => SipSecurityLog::whereDate('event_time', $today)->inbound()->count(),
-            'outbound_today' => SipSecurityLog::whereDate('event_time', $today)->outbound()->count(),
-            'unique_ips_today' => SipSecurityLog::whereDate('event_time', $today)->distinct('source_ip')->count('source_ip'),
-            'rejected_week' => SipSecurityLog::where('event_time', '>=', $thisWeek)->rejected()->count(),
-            'rejected_month' => SipSecurityLog::where('event_time', '>=', $thisMonth)->rejected()->count(),
+            'total_today' => $todayStats->total ?? 0,
+            'rejected_today' => $todayStats->rejected ?? 0,
+            'allowed_today' => $todayStats->allowed ?? 0,
+            'inbound_today' => $todayStats->inbound ?? 0,
+            'outbound_today' => $todayStats->outbound ?? 0,
+            'unique_ips_today' => $todayStats->unique_ips ?? 0,
+            'rejected_week' => $rejectedWeek,
+            'rejected_month' => $rejectedMonth,
         ];
 
-        // Get top rejected IPs (potential threats)
+        // Get top rejected IPs (potential threats) - with index hint
         $topRejectedIps = SipSecurityLog::selectRaw('source_ip, COUNT(*) as count')
-            ->rejected()
+            ->where('status', 'REJECTED')
             ->where('event_time', '>=', $thisWeek)
             ->groupBy('source_ip')
             ->orderByDesc('count')
@@ -40,7 +61,7 @@ class SipLogController extends Controller
 
         // Get top rejection reasons
         $topRejectReasons = SipSecurityLog::selectRaw('reject_reason, COUNT(*) as count')
-            ->rejected()
+            ->where('status', 'REJECTED')
             ->whereNotNull('reject_reason')
             ->where('event_time', '>=', $thisWeek)
             ->groupBy('reject_reason')
@@ -120,7 +141,15 @@ class SipLogController extends Controller
     public function show(int $sipLog): View
     {
         $sipLog = SipSecurityLog::findOrFail($sipLog);
-        return view('sip-logs.show', compact('sipLog'));
+        
+        // Get related logs from same IP (limit to last 5)
+        $relatedLogs = SipSecurityLog::where('source_ip', $sipLog->source_ip)
+            ->where('id', '!=', $sipLog->id)
+            ->latest('event_time')
+            ->limit(5)
+            ->get(['id', 'event_time', 'status', 'callee_id']);
+
+        return view('sip-logs.show', compact('sipLog', 'relatedLogs'));
     }
 
     public function export(Request $request): StreamedResponse

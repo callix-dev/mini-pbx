@@ -348,13 +348,6 @@
             </div>
 
             <!-- Timeline (same source IP, recent) -->
-            @php
-                $relatedLogs = \App\Models\SipSecurityLog::where('source_ip', $sipLog->source_ip)
-                    ->where('id', '!=', $sipLog->id)
-                    ->latest('event_time')
-                    ->limit(5)
-                    ->get();
-            @endphp
             @if($relatedLogs->isNotEmpty())
             <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
                 <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
