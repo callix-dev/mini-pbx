@@ -117,8 +117,9 @@ class SipLogController extends Controller
         ));
     }
 
-    public function show(SipSecurityLog $sipLog): View
+    public function show(int $sipLog): View
     {
+        $sipLog = SipSecurityLog::findOrFail($sipLog);
         return view('sip-logs.show', compact('sipLog'));
     }
 
