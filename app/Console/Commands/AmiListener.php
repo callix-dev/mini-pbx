@@ -11,6 +11,7 @@ use App\Models\CallLog;
 use App\Models\Extension;
 use App\Models\ExtensionRegistration;
 use App\Models\Queue;
+use App\Models\SipSecurityLog;
 use App\Models\User;
 use App\Services\SettingsService;
 use Carbon\Carbon;
@@ -174,6 +175,14 @@ class AmiListener extends Command
             'DialEnd' => $this->handleDial($event),
             // CDR Event - Most reliable for call logging
             'Cdr' => $this->handleCdr($event),
+            // Security Events - Failed authentication attempts
+            'InvalidAccountID' => $this->handleSecurityEvent($event),
+            'ChallengeResponseFailed' => $this->handleSecurityEvent($event),
+            'FailedACL' => $this->handleSecurityEvent($event),
+            'InvalidPassword' => $this->handleSecurityEvent($event),
+            'UnexpectedAddress' => $this->handleSecurityEvent($event),
+            'ChallengeSent' => null, // Ignore - just informational
+            'SuccessfulAuth' => null, // Ignore - successful auth
             default => null,
         };
     }
@@ -499,6 +508,180 @@ class AmiListener extends Command
         }
         
         return null;
+    }
+
+    /**
+     * Handle security events from Asterisk
+     * 
+     * Events: InvalidAccountID, ChallengeResponseFailed, FailedACL, InvalidPassword, UnexpectedAddress
+     */
+    private function handleSecurityEvent(array $event): void
+    {
+        $eventType = $event['Event'] ?? 'Unknown';
+        $service = $event['Service'] ?? 'PJSIP'; // Usually PJSIP
+        $accountId = $event['AccountID'] ?? null;
+        $remoteAddress = $event['RemoteAddress'] ?? null;
+        $localAddress = $event['LocalAddress'] ?? null;
+        $severity = $event['Severity'] ?? 'Error';
+        $sessionId = $event['SessionID'] ?? null;
+        
+        // Parse remote address (format: IPV4/UDP/IP/PORT or IPV4/TCP/IP/PORT)
+        $sourceIp = null;
+        $sourcePort = null;
+        $transport = 'UDP';
+        
+        if ($remoteAddress) {
+            // Format: IPV4/UDP/192.168.1.100/5060 or IPv4/UDP/192.168.1.100/5060
+            if (preg_match('/(?:IPV?4|IPV?6)\/(\w+)\/([^\/]+)\/(\d+)/i', $remoteAddress, $matches)) {
+                $transport = strtoupper($matches[1]);
+                $sourceIp = $matches[2];
+                $sourcePort = (int) $matches[3];
+            }
+        }
+        
+        // Parse local address for destination info
+        $destIp = null;
+        $destPort = null;
+        
+        if ($localAddress) {
+            if (preg_match('/(?:IPV?4|IPV?6)\/(\w+)\/([^\/]+)\/(\d+)/i', $localAddress, $matches)) {
+                $destIp = $matches[2];
+                $destPort = (int) $matches[3];
+            }
+        }
+        
+        // Map event type to status and reason
+        $status = SipSecurityLog::STATUS_REJECTED;
+        $sipCode = 401;
+        $reason = match ($eventType) {
+            'InvalidAccountID' => 'No matching endpoint found',
+            'ChallengeResponseFailed' => 'Failed to authenticate',
+            'InvalidPassword' => 'Invalid password',
+            'FailedACL' => 'ACL check failed',
+            'UnexpectedAddress' => 'Unexpected source address',
+            default => $eventType,
+        };
+        
+        // Map to SIP response codes
+        $sipCode = match ($eventType) {
+            'InvalidAccountID' => 404,
+            'ChallengeResponseFailed', 'InvalidPassword' => 401,
+            'FailedACL', 'UnexpectedAddress' => 403,
+            default => 400,
+        };
+        
+        // Determine request type from service or event details
+        $requestType = 'UNKNOWN';
+        if (isset($event['RequestType'])) {
+            $requestType = strtoupper($event['RequestType']);
+        } elseif (isset($event['AuthMethod'])) {
+            // If auth method is present, it's likely a REGISTER or INVITE
+            $requestType = 'AUTH';
+        }
+        
+        // Skip if no source IP (malformed event)
+        if (!$sourceIp) {
+            if ($this->option('debug')) {
+                $this->warn("Security event without source IP: " . json_encode($event));
+            }
+            return;
+        }
+        
+        // Check for duplicate (same IP, same account, same reason within 1 second)
+        $exists = SipSecurityLog::where('source_ip', $sourceIp)
+            ->where('caller_id', $accountId)
+            ->where('reject_reason', $reason)
+            ->where('event_time', '>=', now()->subSecond())
+            ->exists();
+            
+        if ($exists) {
+            return;
+        }
+        
+        try {
+            SipSecurityLog::create([
+                'event_time' => now(),
+                'event_type' => $requestType,
+                'direction' => 'inbound',
+                'source_ip' => $sourceIp,
+                'source_port' => $sourcePort,
+                'destination_ip' => $destIp ?: $this->getServerPublicIp(),
+                'destination_port' => $destPort ?: 5060,
+                'caller_id' => $accountId,
+                'caller_name' => $accountId,
+                'status' => $status,
+                'reject_reason' => $reason,
+                'sip_response_code' => $sipCode,
+                'call_id' => $sessionId,
+                'metadata' => [
+                    'ami_event' => $eventType,
+                    'service' => $service,
+                    'severity' => $severity,
+                    'transport' => $transport,
+                    'raw_remote' => $remoteAddress,
+                    'raw_local' => $localAddress,
+                ],
+            ]);
+            
+            if ($this->option('debug')) {
+                $this->line("<fg=red>[SECURITY]</> {$eventType}: {$accountId} from {$sourceIp}:{$sourcePort} - {$reason}");
+            }
+            
+            Log::warning('SIP Security Event', [
+                'event' => $eventType,
+                'account' => $accountId,
+                'source' => "{$sourceIp}:{$sourcePort}",
+                'reason' => $reason,
+            ]);
+            
+        } catch (\Exception $e) {
+            Log::error('Failed to log security event', [
+                'error' => $e->getMessage(),
+                'event' => $event,
+            ]);
+        }
+    }
+    
+    /**
+     * Get server's public IP address
+     */
+    private function getServerPublicIp(): string
+    {
+        static $publicIp = null;
+        
+        if ($publicIp !== null) {
+            return $publicIp;
+        }
+        
+        // Try from cache first
+        $publicIp = Cache::get('server_public_ip');
+        if ($publicIp) {
+            return $publicIp;
+        }
+        
+        // Try from env
+        $publicIp = env('SERVER_PUBLIC_IP');
+        if ($publicIp) {
+            Cache::put('server_public_ip', $publicIp, 3600);
+            return $publicIp;
+        }
+        
+        // Try to detect
+        try {
+            $ip = @file_get_contents('https://api.ipify.org', false, stream_context_create([
+                'http' => ['timeout' => 2]
+            ]));
+            if ($ip && filter_var(trim($ip), FILTER_VALIDATE_IP)) {
+                $publicIp = trim($ip);
+                Cache::put('server_public_ip', $publicIp, 3600);
+                return $publicIp;
+            }
+        } catch (\Exception $e) {
+            // Ignore
+        }
+        
+        $publicIp = '0.0.0.0';
+        return $publicIp;
     }
 
     private function handleBridge(array $event): void
