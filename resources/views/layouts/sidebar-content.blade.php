@@ -133,6 +133,10 @@
             Audit Logs
         </x-sidebar-link>
 
+        <x-sidebar-link href="{{ route('sip-logs.index') }}" :active="request()->routeIs('sip-logs.*')" icon="shield">
+            SIP Logs
+        </x-sidebar-link>
+
         <x-sidebar-link href="{{ route('backups.index') }}" :active="request()->routeIs('backups.*')" icon="database">
             Backups
         </x-sidebar-link>

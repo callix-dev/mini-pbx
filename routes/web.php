@@ -22,6 +22,7 @@ use App\Http\Controllers\Platform\SystemSettingController;
 use App\Http\Controllers\Platform\ApiKeyController;
 use App\Http\Controllers\Platform\AuditLogController;
 use App\Http\Controllers\Platform\BackupController;
+use App\Http\Controllers\Platform\SipLogController;
 use App\Http\Controllers\Agent\CallbackController;
 use App\Http\Controllers\SoftphoneController;
 use Illuminate\Support\Facades\Route;
@@ -163,6 +164,13 @@ Route::middleware(['auth', 'verified'])->group(function () {
             Route::get('/', [AuditLogController::class, 'index'])->name('index');
             Route::get('/export', [AuditLogController::class, 'export'])->name('export');
             Route::get('/{auditLog}', [AuditLogController::class, 'show'])->name('show');
+        });
+
+        // SIP Security Logs
+        Route::prefix('sip-logs')->name('sip-logs.')->group(function () {
+            Route::get('/', [SipLogController::class, 'index'])->name('index');
+            Route::get('/export', [SipLogController::class, 'export'])->name('export');
+            Route::get('/{sipLog}', [SipLogController::class, 'show'])->name('show');
         });
 
         // Backups
