@@ -10,9 +10,9 @@ use Carbon\Carbon;
 class ImportAsteriskSecurityLogs extends Command
 {
     protected $signature = 'asterisk:import-security-logs 
-                            {--file=/var/log/asterisk/messages : Path to Asterisk log file}
+                            {--file=/var/log/asterisk/messages.log : Path to Asterisk log file}
                             {--since= : Only import logs since this datetime (Y-m-d H:i:s)}
-                            {--tail=1000 : Number of lines to read from end of file}
+                            {--tail=10000 : Number of lines to read from end of file}
                             {--daemon : Run continuously, watching for new logs}';
 
     protected $description = 'Import security events from Asterisk log files';
@@ -32,23 +32,74 @@ class ImportAsteriskSecurityLogs extends Command
         $this->info("Server public IP: {$this->serverPublicIp}");
 
         if ($this->option('daemon')) {
+            // In daemon mode: first catch up on missed logs, then watch
+            $this->info("Catching up on logs since last import...");
+            $this->importSinceLastEntry();
             return $this->runDaemon();
         }
 
         return $this->importOnce();
     }
 
+    /**
+     * Import logs since the last entry in database
+     */
+    private function importSinceLastEntry(): int
+    {
+        $file = $this->option('file');
+        
+        if (!file_exists($file)) {
+            $this->error("Log file not found: {$file}");
+            return 1;
+        }
+
+        // Get the last logged event time from database
+        $lastLog = SipSecurityLog::latest('event_time')->first();
+        $since = $lastLog ? $lastLog->event_time : Carbon::now()->subDay();
+        
+        $this->info("Importing logs since: {$since->format('Y-m-d H:i:s')}");
+
+        // Read entire file and filter by date (for catch-up)
+        $tail = (int) $this->option('tail');
+        $lines = $this->tailFile($file, $tail);
+        
+        $imported = 0;
+        $skipped = 0;
+
+        foreach ($lines as $line) {
+            $result = $this->parseLine($line, $since);
+            if ($result === true) {
+                $imported++;
+            } elseif ($result === false) {
+                $skipped++;
+            }
+        }
+
+        $this->info("Catch-up complete. Imported: {$imported}, Skipped: {$skipped}");
+        return 0;
+    }
+
     private function importOnce(): int
     {
         $file = $this->option('file');
         $tail = (int) $this->option('tail');
-        $since = $this->option('since') ? Carbon::parse($this->option('since')) : null;
+        
+        // Use provided --since or get from last database entry
+        if ($this->option('since')) {
+            $since = Carbon::parse($this->option('since'));
+        } else {
+            $lastLog = SipSecurityLog::latest('event_time')->first();
+            $since = $lastLog ? $lastLog->event_time : null;
+        }
 
         if (!file_exists($file)) {
             $this->error("Log file not found: {$file}");
             return 1;
         }
 
+        if ($since) {
+            $this->info("Importing logs since: {$since->format('Y-m-d H:i:s')}");
+        }
         $this->info("Reading last {$tail} lines from {$file}...");
 
         // Read last N lines efficiently
@@ -84,22 +135,37 @@ class ImportAsteriskSecurityLogs extends Command
         // Open file and seek to end
         $handle = fopen($file, 'r');
         fseek($handle, 0, SEEK_END);
+        
+        $lastActivity = time();
 
         while (true) {
             $line = fgets($handle);
             
             if ($line !== false) {
-                $this->parseLine(trim($line));
+                $result = $this->parseLine(trim($line));
+                if ($result === true) {
+                    $lastActivity = time();
+                }
             } else {
                 // Check if file was rotated
                 clearstatcache();
-                $currentInode = fileinode($file);
-                $handleStat = fstat($handle);
+                if (file_exists($file)) {
+                    $currentInode = fileinode($file);
+                    $handleStat = fstat($handle);
+                    
+                    if ($currentInode !== $handleStat['ino']) {
+                        $this->info("Log file rotated, reopening...");
+                        fclose($handle);
+                        sleep(1); // Wait for new file to be created
+                        $handle = fopen($file, 'r');
+                        $lastActivity = time();
+                    }
+                }
                 
-                if ($currentInode !== $handleStat['ino']) {
-                    $this->info("Log file rotated, reopening...");
-                    fclose($handle);
-                    $handle = fopen($file, 'r');
+                // Log heartbeat every 5 minutes
+                if (time() - $lastActivity > 300) {
+                    $this->line("<fg=gray>[" . date('H:i:s') . "] Watching for events...</>");
+                    $lastActivity = time();
                 }
                 
                 usleep(100000); // 100ms
